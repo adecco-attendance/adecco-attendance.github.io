@@ -10,7 +10,7 @@ window.CONFIG = {
   // 직원 계정 이메일의 도메인. 로그인 시 아이디만 입력하면 뒤에 자동으로 붙습니다.
   // 예) 'mycompany.com' → 'hong' 입력 시 'hong@mycompany.com' 으로 로그인
   // 실제로 메일을 받을 수 있는 주소가 아니어도 됩니다.
-  EMAIL_DOMAIN: 'adecco-attendance.com',
+  EMAIL_DOMAIN: 'adeccobs2.co.kr',
 
   COMPANY_NAME: '아데코코리아',
 };
