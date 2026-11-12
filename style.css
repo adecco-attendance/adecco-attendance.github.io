@@ -110,6 +110,14 @@ td.empty { text-align: center; color: var(--muted); padding: 28px 0; }
 .tag-open { color: var(--warn); font-weight: 600; }
 .edited { font-size: 12px; color: var(--muted); }
 
+.add-form { margin-top: 12px; }
+.id-input { display: flex; align-items: center; gap: 4px; }
+.id-input input { width: 130px; }
+.check-label { display: flex; flex-direction: row; align-items: center; gap: 6px; padding-bottom: 10px; color: var(--text); }
+.status-on { color: var(--ok); font-weight: 600; }
+.status-off { color: var(--danger); font-weight: 600; }
+tr.inactive td { background: #fafafa; }
+td.actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .section-head { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 tr.zero td { color: var(--muted); }
 .absent { white-space: normal; min-width: 160px; color: var(--muted); font-size: 13px; }

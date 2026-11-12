@@ -170,7 +170,7 @@
     document.querySelectorAll('.subtab').forEach((x) => x.classList.toggle('active', x === t));
     document.querySelectorAll('#admin-view [data-group]').forEach((el) => { el.hidden = el.dataset.group !== sub; });
     if (sub === 'records') initAdmin();
-    if (sub === 'staff') Promise.all([loadBranches(), loadStaff()]).then(renderStaff);
+    if (sub === 'staff') Promise.all([loadBranches(), loadStaff(), loadAuthStatus()]).then(renderStaff);
     if (sub === 'branches') Promise.all([loadBranches(), loadStaff()]).then(renderBranches);
   }));
 
@@ -319,6 +319,36 @@
     fillUserSelects();
   }
 
+  // ---- 직원 계정 관리 (Edge Function 'manage-staff', 관리자 전용) ----
+  async function staffApi(body) {
+    const { data, error } = await sb.functions.invoke('manage-staff', { body });
+    if (error) {
+      let msg = error.message;
+      try { const j = await error.context.json(); if (j?.error) msg = j.error; } catch (_) { /* ignore */ }
+      throw new Error(msg);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }
+
+  let authStatus = new Map(); // user_id -> { banned, last_sign_in_at, email }
+  async function loadAuthStatus() {
+    try {
+      const d = await staffApi({ action: 'list' });
+      authStatus = new Map(d.users.map((u) => [u.id, u]));
+    } catch (e) {
+      console.warn('계정 상태를 불러오지 못했습니다:', e.message);
+      authStatus = new Map();
+    }
+  }
+  // 비활성화(퇴사)된 직원인지. 상태를 못 불러온 경우엔 사용 중으로 간주
+  const isActive = (id) => !authStatus.get(id)?.banned;
+
+  const loginIdOf = (email) => {
+    const suffix = `@${CFG.EMAIL_DOMAIN}`;
+    return email && CFG.EMAIL_DOMAIN && email.endsWith(suffix) ? email.slice(0, -suffix.length) : (email || '');
+  };
+
   const matchBranch = (branchId, filter) =>
     !filter || (filter === 'none' ? branchId == null : String(branchId) === filter);
 
@@ -358,7 +388,7 @@
       adminReady = true;
     }
     await loadBranches();
-    await loadStaff();
+    await Promise.all([loadStaff(), loadAuthStatus()]);
     loadTodaySummary();
     loadAdminRecords();
   }
@@ -376,7 +406,7 @@
     const groups = [...branches.map((b) => ({ id: b.id, name: b.name, active: b.is_active })), { id: null, name: '지점 미지정', active: true }];
     const total = { staff: 0, in: 0, working: 0, out: 0, absent: 0 };
     const rows = groups.map((g) => {
-      const members = staff.filter((s) => (s.branch_id ?? null) === g.id);
+      const members = staff.filter((s) => (s.branch_id ?? null) === g.id && isActive(s.id));
       // 출근 인원은 "기록된 지점" 기준 (오늘 지점을 옮긴 경우 대비)
       const recs = data.filter((r) => (r.branch_id ?? null) === g.id);
       const absent = members.filter((s) => !byUser.has(s.id));
@@ -454,7 +484,7 @@
     const fu = $('f-user').value;
     const map = new Map();
     // 기록이 없는 직원도 0일로 표시
-    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu)).forEach((s) => {
+    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id)).forEach((s) => {
       map.set(s.id, { name: s.name, homeBranch: s.branch_id, branches: new Set(), days: 0, total: 0, doneDays: 0, open: 0, edited: 0 });
     });
     adminRows.forEach((r) => {
@@ -578,15 +608,112 @@
   // 직원 관리
   function renderStaff() {
     const fb = $('s-branch').value;
-    $('staff-list').innerHTML = staff.filter((s) => matchBranch(s.branch_id, fb)).map((s) => `
-      <tr data-id="${s.id}">
+    const curNa = $('na-branch').value;
+    $('na-branch').innerHTML = branchOptions({ onlyActive: true });
+    $('na-branch').value = curNa;
+    const statusKnown = authStatus.size > 0;
+    const list = staff.filter((s) => matchBranch(s.branch_id, fb))
+      .sort((a, b) => (isActive(b.id) - isActive(a.id)) || a.name.localeCompare(b.name, 'ko'));
+    $('staff-list').innerHTML = list.map((s) => {
+      const st = authStatus.get(s.id);
+      const active = isActive(s.id);
+      const self = s.id === me.id;
+      const last = st?.last_sign_in_at ? `${ymd(st.last_sign_in_at)} ${hm(st.last_sign_in_at)}` : (statusKnown ? '없음' : '-');
+      return `
+      <tr data-id="${s.id}" class="${active ? '' : 'inactive'}">
         <td><input type="text" value="${esc(s.name)}" maxlength="30" data-field="name"></td>
         <td><select data-field="branch_id">${branchOptions({ current: s.branch_id, onlyActive: true })}</select></td>
-        <td>${esc(s.email)}</td>
-        <td><input type="checkbox" data-field="is_admin" ${s.is_admin ? 'checked' : ''} ${s.id === me.id ? 'disabled title="본인의 관리자 권한은 해제할 수 없습니다"' : ''}></td>
-        <td><button class="btn small" data-save>저장</button></td>
-      </tr>`).join('') || '<tr><td colspan="5" class="empty">직원이 없습니다.</td></tr>';
+        <td>${esc(loginIdOf(s.email))}</td>
+        <td>${statusKnown ? (active ? '<span class="status-on">사용 중</span>' : '<span class="status-off">비활성</span>') : '-'}</td>
+        <td class="edited">${last}</td>
+        <td><input type="checkbox" data-field="is_admin" ${s.is_admin ? 'checked' : ''} ${self ? 'disabled title="본인의 관리자 권한은 해제할 수 없습니다"' : ''}></td>
+        <td class="actions">
+          <button class="btn small" data-save>저장</button>
+          <button class="btn small" data-reset>비밀번호 초기화</button>
+          ${self ? '' : `<button class="btn small" data-toggle="${active ? 'off' : 'on'}">${active ? '비활성화' : '다시 사용'}</button>`}
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="7" class="empty">직원이 없습니다.</td></tr>';
   }
+
+  // 직원 추가
+  $('staff-add-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = $('na-msg');
+    const btn = e.submitter; btn.disabled = true;
+    msg.hidden = true;
+    const loginId = $('na-id').value.trim().toLowerCase();
+    const name = $('na-name').value.trim();
+    try {
+      await staffApi({
+        action: 'create',
+        login_id: loginId,
+        domain: CFG.EMAIL_DOMAIN,
+        name,
+        password: $('na-pw').value,
+        branch_id: $('na-branch').value || null,
+        is_admin: $('na-admin').checked,
+      });
+      msg.textContent = `${name}(${loginId}) 직원을 추가했습니다. 아이디와 초기 비밀번호를 직원에게 전달하세요.`;
+      msg.className = 'msg ok';
+      $('staff-add-form').reset();
+      await Promise.all([loadStaff(), loadAuthStatus()]);
+      renderStaff();
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg err';
+    } finally {
+      msg.hidden = false;
+      btn.disabled = false;
+    }
+  });
+
+  // 비밀번호 초기화 / 비활성화
+  let resetTarget = null;
+  $('staff-list').addEventListener('click', async (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const s = staff.find((x) => x.id === tr.dataset.id);
+    if (!s) return;
+
+    if (e.target.matches('[data-reset]')) {
+      resetTarget = s;
+      $('reset-title').textContent = `비밀번호 초기화 - ${s.name}`;
+      $('reset-form').reset();
+      showError($('reset-error'), '');
+      $('reset-dialog').showModal();
+    } else if (e.target.matches('[data-toggle]')) {
+      const turnOn = e.target.dataset.toggle === 'on';
+      const q = turnOn
+        ? `${s.name} 계정을 다시 사용하도록 하시겠습니까?`
+        : `${s.name} 계정을 비활성화하시겠습니까?\n로그인이 막히고, 근태 기록은 그대로 보존됩니다.`;
+      if (!confirm(q)) return;
+      e.target.disabled = true;
+      try {
+        await staffApi({ action: 'set_active', user_id: s.id, active: turnOn });
+        await loadAuthStatus();
+        renderStaff();
+      } catch (err) {
+        alert(err.message);
+        e.target.disabled = false;
+      }
+    }
+  });
+  $('reset-cancel').addEventListener('click', () => $('reset-dialog').close());
+  $('reset-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!resetTarget) return;
+    const btn = e.submitter; btn.disabled = true;
+    try {
+      await staffApi({ action: 'reset_password', user_id: resetTarget.id, password: $('reset-pw').value });
+      $('reset-dialog').close();
+      alert(`${resetTarget.name}님의 비밀번호를 초기화했습니다.`);
+    } catch (err) {
+      showError($('reset-error'), err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
   $('s-branch').addEventListener('change', renderStaff);
 
   $('staff-list').addEventListener('click', async (e) => {
