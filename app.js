@@ -134,7 +134,7 @@
   $('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     showError($('login-error'), '');
-    let id = $('login-id').value.trim();
+    let id = $('login-id').value.trim().toLowerCase();
     if (!id.includes('@') && CFG.EMAIL_DOMAIN) id = `${id}@${CFG.EMAIL_DOMAIN}`;
     const btn = e.submitter; btn.disabled = true;
     const { data, error } = await sb.auth.signInWithPassword({ email: id, password: $('login-pw').value });
@@ -341,8 +341,9 @@
       authStatus = new Map();
     }
   }
-  // 비활성화(퇴사)된 직원인지. 상태를 못 불러온 경우엔 사용 중으로 간주
-  const isActive = (id) => !authStatus.get(id)?.banned;
+  const isDeleted = (id) => !!staff.find((s) => s.id === id)?.deleted_at;
+  // 사용 중인 직원인지 (삭제·비활성화 제외). 상태를 못 불러온 경우엔 비활성 여부는 사용 중으로 간주
+  const isActive = (id) => !isDeleted(id) && !authStatus.get(id)?.banned;
 
   const loginIdOf = (email) => {
     const suffix = `@${CFG.EMAIL_DOMAIN}`;
@@ -358,9 +359,9 @@
     const cur = $('f-user').value;
     const list = staff.filter((s) => matchBranch(s.branch_id, fb));
     $('f-user').innerHTML = '<option value="">전체</option>' +
-      list.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+      list.map((s) => `<option value="${s.id}">${esc(s.name)}${s.deleted_at ? ' (퇴사)' : ''}</option>`).join('');
     $('f-user').value = list.some((s) => s.id === cur) ? cur : '';
-    $('edit-user').innerHTML = staff.map((s) =>
+    $('edit-user').innerHTML = staff.filter((s) => !s.deleted_at).map((s) =>
       `<option value="${s.id}">${esc(s.name)} (${esc(branchName(s.branch_id))})</option>`).join('');
   }
   $('f-branch').addEventListener('change', () => { fillUserSelects(); loadAdminRecords(); });
@@ -612,9 +613,22 @@
     $('na-branch').innerHTML = branchOptions({ onlyActive: true });
     $('na-branch').value = curNa;
     const statusKnown = authStatus.size > 0;
-    const list = staff.filter((s) => matchBranch(s.branch_id, fb))
-      .sort((a, b) => (isActive(b.id) - isActive(a.id)) || a.name.localeCompare(b.name, 'ko'));
+    const showDeleted = $('s-show-deleted').checked;
+    const list = staff.filter((s) => matchBranch(s.branch_id, fb) && (showDeleted || !s.deleted_at))
+      .sort((a, b) => (!!a.deleted_at - !!b.deleted_at) || (isActive(b.id) - isActive(a.id)) || a.name.localeCompare(b.name, 'ko'));
     $('staff-list').innerHTML = list.map((s) => {
+      if (s.deleted_at) {
+        return `
+      <tr data-id="${s.id}" class="inactive">
+        <td>${esc(s.name)}</td>
+        <td>${esc(branchName(s.branch_id))}</td>
+        <td>${esc(loginIdOf(s.email))}</td>
+        <td><span class="muted">삭제됨</span></td>
+        <td class="edited">퇴사 처리 ${ymd(s.deleted_at)}</td>
+        <td></td>
+        <td class="muted small">기록 보존</td>
+      </tr>`;
+      }
       const st = authStatus.get(s.id);
       const active = isActive(s.id);
       const self = s.id === me.id;
@@ -631,10 +645,22 @@
           <button class="btn small" data-save>저장</button>
           <button class="btn small" data-reset>비밀번호 초기화</button>
           ${self ? '' : `<button class="btn small" data-toggle="${active ? 'off' : 'on'}">${active ? '비활성화' : '다시 사용'}</button>`}
+          ${!self && statusKnown && !active ? '<button class="btn small danger-outline" data-delete>삭제</button>' : ''}
         </td>
       </tr>`;
     }).join('') || '<tr><td colspan="7" class="empty">직원이 없습니다.</td></tr>';
   }
+
+  // 아이디는 항상 소문자로 저장되므로 입력하는 즉시 소문자로 바꿔서 보여줌
+  $('na-id').addEventListener('input', (e) => {
+    const el = e.target;
+    const lower = el.value.toLowerCase();
+    if (lower !== el.value) {
+      const pos = el.selectionStart;
+      el.value = lower;
+      el.setSelectionRange(pos, pos);
+    }
+  });
 
   // 직원 추가
   $('staff-add-form').addEventListener('submit', async (e) => {
@@ -682,6 +708,26 @@
       $('reset-form').reset();
       showError($('reset-error'), '');
       $('reset-dialog').showModal();
+    } else if (e.target.matches('[data-delete]')) {
+      const typed = prompt(
+        `${s.name} 계정을 삭제합니다.\n\n` +
+        '- 로그인 계정은 완전히 삭제되어 되돌릴 수 없습니다.\n' +
+        '- 이름과 근태 기록은 "퇴사" 상태로 보존됩니다.\n' +
+        '- 같은 아이디로 새 직원을 다시 만들 수 있습니다.\n\n' +
+        `계속하려면 직원 이름 "${s.name}"을(를) 정확히 입력하세요.`,
+      );
+      if (typed === null) return;
+      if (typed.trim() !== s.name) return alert('이름이 일치하지 않아 삭제하지 않았습니다.');
+      e.target.disabled = true;
+      try {
+        await staffApi({ action: 'delete', user_id: s.id });
+        await Promise.all([loadStaff(), loadAuthStatus()]);
+        renderStaff();
+        alert(`${s.name} 계정을 삭제했습니다. 근태 기록은 보존됩니다.`);
+      } catch (err) {
+        alert(err.message);
+        e.target.disabled = false;
+      }
     } else if (e.target.matches('[data-toggle]')) {
       const turnOn = e.target.dataset.toggle === 'on';
       const q = turnOn
@@ -715,6 +761,7 @@
     }
   });
   $('s-branch').addEventListener('change', renderStaff);
+  $('s-show-deleted').addEventListener('change', renderStaff);
 
   $('staff-list').addEventListener('click', async (e) => {
     if (!e.target.matches('[data-save]')) return;

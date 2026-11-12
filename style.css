@@ -117,6 +117,8 @@ td.empty { text-align: center; color: var(--muted); padding: 28px 0; }
 .status-on { color: var(--ok); font-weight: 600; }
 .status-off { color: var(--danger); font-weight: 600; }
 tr.inactive td { background: #fafafa; }
+.btn.danger-outline { color: var(--danger); border-color: #f3b5b2; }
+.btn.danger-outline:hover:not(:disabled) { background: #fff1f0; }
 td.actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .section-head { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 tr.zero td { color: var(--muted); }
