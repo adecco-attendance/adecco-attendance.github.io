@@ -17,7 +17,6 @@
   let me = null;          // 로그인한 사용자 profile
   let staff = [];         // (관리자) 직원 목록
   let branches = [];      // 지점 목록
-  let adminRows = [];     // (관리자) 현재 조회된 기록
   let editingId = null;   // 수정 중인 기록 id (null 이면 신규)
 
   // ---------------------------------------------------------------
@@ -306,7 +305,7 @@
     const { data, error } = await sb.from('branches').select('*').order('name');
     if (error) { alert(errMsg(error)); return; }
     branches = data;
-    ['f-branch', 's-branch'].forEach((id) => {
+    ['p-branch', 'd-branch', 's-branch'].forEach((id) => {
       const cur = $(id).value;
       $(id).innerHTML = branchOptions({ includeAll: true });
       $(id).value = cur;
@@ -362,48 +361,65 @@
   const matchBranch = (branchId, filter) =>
     !filter || (filter === 'none' ? branchId == null : String(branchId) === filter);
 
+  // ---- 필터 (p: 개인별 근무현황, d: 일자별 근무현황 — 각각 따로 동작) ----
+  const loaders = { p: () => loadPersonal(), d: () => loadDaily() };
+
   // 지점 필터에 맞춰 직원 select 갱신
-  function fillUserSelects() {
-    const fb = $('f-branch').value;
-    const cur = $('f-user').value;
+  function fillUserSelect(prefix) {
+    const fb = $(`${prefix}-branch`).value;
+    const sel = $(`${prefix}-user`);
+    const cur = sel.value;
     const list = staff.filter((s) => matchBranch(s.branch_id, fb));
-    $('f-user').innerHTML = '<option value="">전체</option>' +
+    sel.innerHTML = '<option value="">전체</option>' +
       list.map((s) => `<option value="${s.id}">${esc(s.name)}${s.deleted_at ? ' (퇴사)' : ''}</option>`).join('');
-    $('f-user').value = list.some((s) => s.id === cur) ? cur : '';
+    sel.value = list.some((s) => s.id === cur) ? cur : '';
+  }
+  function fillUserSelects() {
+    fillUserSelect('p');
+    fillUserSelect('d');
     $('edit-user').innerHTML = staff.filter((s) => !s.deleted_at).map((s) =>
       `<option value="${s.id}">${esc(s.name)} (${esc(branchName(s.branch_id))})</option>`).join('');
   }
-  $('f-branch').addEventListener('change', () => { fillUserSelects(); loadAdminRecords(); });
-  $('f-user').addEventListener('change', loadAdminRecords);
 
-  // 월 선택 → 그 달 1일 ~ 말일로 기간 설정 후 조회
-  function setMonth(ym) {
+  // 월 선택 → 그 달 1일 ~ 말일로 기간 설정
+  function setMonth(prefix, ym) {
     const [from, to] = monthRange(ym);
-    $('f-month').value = ym;
-    $('f-from').value = from;
-    $('f-to').value = to;
+    $(`${prefix}-month`).value = ym;
+    $(`${prefix}-from`).value = from;
+    $(`${prefix}-to`).value = to;
   }
-  $('f-month').addEventListener('change', () => {
-    if (!$('f-month').value) return;
-    setMonth($('f-month').value);
-    loadAdminRecords();
+
+  ['p', 'd'].forEach((prefix) => {
+    $(`${prefix}-branch`).addEventListener('change', () => { fillUserSelect(prefix); loaders[prefix](); });
+    $(`${prefix}-user`).addEventListener('change', loaders[prefix]);
+    $(`${prefix}-month`).addEventListener('change', () => {
+      if (!$(`${prefix}-month`).value) return;
+      setMonth(prefix, $(`${prefix}-month`).value);
+      loaders[prefix]();
+    });
+    // 날짜를 직접 바꾸면 월 선택은 비움 (한 달 범위가 아닐 수 있으므로)
+    [`${prefix}-from`, `${prefix}-to`].forEach((id) => $(id).addEventListener('change', () => { $(`${prefix}-month`).value = ''; }));
+    $(`${prefix}-form`).addEventListener('submit', (e) => { e.preventDefault(); loaders[prefix](); });
   });
-  // 날짜를 직접 바꾸면 월 선택은 비움 (한 달 범위가 아닐 수 있으므로)
-  ['f-from', 'f-to'].forEach((id) => $(id).addEventListener('change', () => { $('f-month').value = ''; }));
+
+  function reloadRecords() {
+    loadPersonal();
+    loadDaily();
+    loadTodaySummary();
+  }
 
   async function initAdmin() {
     if (!me?.is_admin) return;
     if (!adminReady) {
-      setMonth(ymd(new Date()).slice(0, 7));
+      const ym = ymd(new Date()).slice(0, 7);
+      setMonth('p', ym);
+      setMonth('d', ym);
       adminReady = true;
     }
     await loadBranches();
     await Promise.all([loadStaff(), loadAuthStatus()]);
-    loadTodaySummary();
-    loadAdminRecords();
+    reloadRecords();
   }
-
-  $('filter-form').addEventListener('submit', (e) => { e.preventDefault(); loadAdminRecords(); });
 
   // 오늘 지점별 현황
   async function loadTodaySummary() {
@@ -439,19 +455,13 @@
   }
   $('today-refresh').addEventListener('click', loadTodaySummary);
 
-  let adminLoadSeq = 0;
-  async function loadAdminRecords() {
-    const fb = $('f-branch').value;
-    const fu = $('f-user').value;
-    const from = $('f-from').value;
-    const to = $('f-to').value;
-    if (!from || !to) return;
-    const seq = ++adminLoadSeq;
-    const tbody = $('admin-records');
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">불러오는 중...</td></tr>';
-    $('staff-summary').innerHTML = '<tr><td colspan="7" class="empty">불러오는 중...</td></tr>';
-
-    const { data, error } = await fetchAll(() => {
+  // 필터 조건으로 출퇴근 기록 조회 (1,000건 넘어도 전부)
+  function fetchRecords(prefix) {
+    const fb = $(`${prefix}-branch`).value;
+    const fu = $(`${prefix}-user`).value;
+    const from = $(`${prefix}-from`).value;
+    const to = $(`${prefix}-to`).value;
+    return fetchAll(() => {
       let q = sb.from('attendance')
         .select('*, branch:branches(name), profile:profiles!attendance_user_id_fkey(name), editor:profiles!attendance_updated_by_fkey(name)')
         .gte('work_date', from).lte('work_date', to)
@@ -461,18 +471,51 @@
       if (fu) q = q.eq('user_id', fu);
       return q;
     });
-    if (seq !== adminLoadSeq) return; // 그 사이 조건이 바뀌어 새 조회가 시작됨 → 이전 결과는 버림
-    if (error) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty">${esc(errMsg(error))}</td></tr>`;
-      $('staff-summary').innerHTML = '';
-      return;
-    }
-    adminRows = data;
+  }
+
+  // ---- 개인별 근무현황 조회 ----
+  let personalRows = [];
+  let personalSeq = 0;
+  async function loadPersonal() {
+    if (!$('p-from').value || !$('p-to').value) return;
+    const seq = ++personalSeq;
+    $('staff-summary').innerHTML = '<tr><td colspan="7" class="empty">불러오는 중...</td></tr>';
+    const { data, error } = await fetchRecords('p');
+    if (seq !== personalSeq) return; // 그 사이 조건이 바뀌어 새 조회가 시작됨 → 이전 결과는 버림
+    if (error) { $('staff-summary').innerHTML = `<tr><td colspan="7" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
+    personalRows = data;
     renderStaffSummary();
-    if (!data.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">기록이 없습니다.</td></tr>'; $('admin-summary').textContent = ''; return; }
-    tbody.innerHTML = data.map((r) => `
+  }
+
+  // ---- 일자별 근무현황 조회 (일자별로 묶어서 표시) ----
+  let dailyRows = [];
+  let dailySeq = 0;
+  async function loadDaily() {
+    if (!$('d-from').value || !$('d-to').value) return;
+    const seq = ++dailySeq;
+    const tbody = $('admin-records');
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">불러오는 중...</td></tr>';
+    const { data, error } = await fetchRecords('d');
+    if (seq !== dailySeq) return;
+    if (error) { tbody.innerHTML = `<tr><td colspan="8" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
+    dailyRows = data;
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">기록이 없습니다.</td></tr>'; $('admin-summary').textContent = ''; return; }
+
+    // 날짜별 그룹 (data는 날짜 내림차순, 같은 날은 출근 빠른 순)
+    const groups = [];
+    data.forEach((r) => {
+      const last = groups[groups.length - 1];
+      if (last && last.date === r.work_date) last.rows.push(r);
+      else groups.push({ date: r.work_date, rows: [r] });
+    });
+    tbody.innerHTML = groups.map((g) => {
+      const open = g.rows.filter((r) => !r.clock_out).length;
+      const total = g.rows.reduce((s, r) => s + durMs(r), 0);
+      const head = `
+      <tr class="day-head"><td colspan="8">${dateLabel(g.date)}
+        <span class="day-meta">출근 ${g.rows.length}명${open ? ` · 미퇴근 ${open}건` : ''} · 근무시간 합계 ${fmtDur(total)}</span></td></tr>`;
+      return head + g.rows.map((r) => `
       <tr>
-        <td>${dateLabel(r.work_date)}</td>
         <td>${esc(r.branch?.name || '미지정')}</td>
         <td>${esc(r.profile?.name)}</td>
         <td>${hm(r.clock_in)}</td>
@@ -482,22 +525,23 @@
         <td class="edited">${r.updated_at ? `${esc(r.editor?.name || '알 수 없음')} · ${ymd(r.updated_at).slice(5)} ${hm(r.updated_at)}` : ''}</td>
         <td><button class="btn small" data-edit="${r.id}">수정</button></td>
       </tr>`).join('');
+    }).join('');
     const total = data.reduce((s, r) => s + durMs(r), 0);
     const open = data.filter((r) => !r.clock_out).length;
-    $('admin-summary').textContent = `${data.length.toLocaleString()}건 · 총 근무시간 ${fmtDur(total)}${open ? ` · 미퇴근 ${open}건` : ''}`;
+    $('admin-summary').textContent = `${groups.length}일 · ${data.length.toLocaleString()}건 · 총 근무시간 ${fmtDur(total)}${open ? ` · 미퇴근 ${open}건` : ''}`;
   }
 
-  // 직원별 요약 (현재 조회 조건 기준)
+  // 개인별 근무 현황 (현재 조회 조건 기준)
   let summaryRows = [];
   function buildStaffSummary() {
-    const fb = $('f-branch').value;
-    const fu = $('f-user').value;
+    const fb = $('p-branch').value;
+    const fu = $('p-user').value;
     const map = new Map();
     // 기록이 없는 직원도 0일로 표시
     staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id)).forEach((s) => {
       map.set(s.id, { name: s.name, homeBranch: s.branch_id, branches: new Set(), days: 0, total: 0, doneDays: 0, open: 0, edited: 0 });
     });
-    adminRows.forEach((r) => {
+    personalRows.forEach((r) => {
       let e = map.get(r.user_id);
       if (!e) {
         e = { name: r.profile?.name || '(알 수 없음)', homeBranch: null, branches: new Set(), days: 0, total: 0, doneDays: 0, open: 0, edited: 0 };
@@ -543,17 +587,17 @@
     if (!summaryRows.length) return alert('다운로드할 내용이 없습니다. 먼저 조회하세요.');
     const mins = (ms) => Math.floor(ms / 60000);
     const lines = [['기간', '지점', '이름', '근무일', '총 근무시간(분)', '총 근무시간(시간)', '일평균(분)', '미퇴근', '관리자 수정']];
-    const period = `${$('f-from').value} ~ ${$('f-to').value}`;
+    const period = `${$('p-from').value} ~ ${$('p-to').value}`;
     summaryRows.forEach((e) => lines.push([
       period, e.branchLabel, e.name, e.days, mins(e.total), (mins(e.total) / 60).toFixed(2),
       e.doneDays ? mins(e.avg) : '', e.open, e.edited,
     ]));
-    downloadCsv(`근태요약_${$('f-from').value}_${$('f-to').value}.csv`, lines);
+    downloadCsv(`개인별근무현황_${$('p-from').value}_${$('p-to').value}.csv`, lines);
   });
 
   $('admin-records').addEventListener('click', (e) => {
     const id = e.target.closest('[data-edit]')?.dataset.edit;
-    if (id) openEdit(adminRows.find((r) => String(r.id) === id));
+    if (id) openEdit(dailyRows.find((r) => String(r.id) === id));
   });
   $('add-record-btn').addEventListener('click', () => openEdit(null));
 
@@ -565,7 +609,7 @@
     $('edit-in').value = row ? toInput(row.clock_in) : `${ymd(new Date())}T09:00`;
     $('edit-out').value = row ? toInput(row.clock_out) : '';
     $('edit-note').value = row?.note || '';
-    if (!row && $('f-user').value) $('edit-user').value = $('f-user').value;
+    if (!row && $('d-user').value) $('edit-user').value = $('d-user').value;
     showError($('edit-error'), '');
     $('edit-dialog').showModal();
   }
@@ -586,8 +630,7 @@
       : await sb.from('attendance').insert({ ...payload, user_id: $('edit-user').value });
     if (error) return showError($('edit-error'), errMsg(error));
     $('edit-dialog').close();
-    loadAdminRecords();
-    loadTodaySummary();
+    reloadRecords();
     if (me) { refreshToday(); loadMyRecords(); }
   });
 
@@ -596,15 +639,14 @@
     const { error } = await sb.from('attendance').delete().eq('id', editingId);
     if (error) return showError($('edit-error'), errMsg(error));
     $('edit-dialog').close();
-    loadAdminRecords();
-    loadTodaySummary();
+    reloadRecords();
   });
 
   // CSV (엑셀에서 한글 깨짐 방지를 위해 BOM 포함)
   $('csv-btn').addEventListener('click', () => {
-    if (!adminRows.length) return alert('다운로드할 기록이 없습니다. 먼저 조회하세요.');
+    if (!dailyRows.length) return alert('다운로드할 기록이 없습니다. 먼저 조회하세요.');
     const lines = [['날짜', '지점', '이름', '출근', '퇴근', '근무시간(분)', '비고', '수정자', '수정일시']];
-    adminRows.slice().reverse().forEach((r) => {
+    dailyRows.slice().reverse().forEach((r) => {
       const ms = durMs(r);
       lines.push([
         r.work_date, r.branch?.name || '미지정', r.profile?.name, hm(r.clock_in), r.clock_out ? hm(r.clock_out) : '',
@@ -612,7 +654,7 @@
         r.updated_at ? `${ymd(r.updated_at)} ${hm(r.updated_at)}` : '',
       ]);
     });
-    downloadCsv(`근태상세_${$('f-from').value}_${$('f-to').value}.csv`, lines);
+    downloadCsv(`일자별근무현황_${$('d-from').value}_${$('d-to').value}.csv`, lines);
   });
 
   // 직원 관리

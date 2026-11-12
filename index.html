@@ -100,25 +100,24 @@
         </div>
       </div>
 
-      <div id="sub-records" class="card" data-group="records">
-        <form id="filter-form" class="filters">
-          <label>월 선택 <input type="month" id="f-month"></label>
-          <label>시작일 <input type="date" id="f-from" required></label>
-          <label>종료일 <input type="date" id="f-to" required></label>
+      <!-- 개인별 근무현황 -->
+      <div id="sub-personal" class="card" data-group="records">
+        <div class="card-head">
+          <h2>개인별 근무현황</h2>
+          <button type="button" class="btn small" id="summary-csv-btn">개인별 근무현황 엑셀 다운로드</button>
+        </div>
+        <form id="p-form" class="filters">
+          <label>월 선택 <input type="month" id="p-month"></label>
+          <label>시작일 <input type="date" id="p-from" required></label>
+          <label>종료일 <input type="date" id="p-to" required></label>
           <label>지점
-            <select id="f-branch"></select>
+            <select id="p-branch"></select>
           </label>
           <label>직원
-            <select id="f-user"><option value="">전체</option></select>
+            <select id="p-user"><option value="">전체</option></select>
           </label>
           <button type="submit" class="btn primary">조회</button>
-          <button type="button" class="btn" id="add-record-btn">기록 추가</button>
         </form>
-
-        <div class="card-head section-head">
-          <h2>직원별 요약</h2>
-          <button type="button" class="btn small" id="summary-csv-btn">직원별 요약 엑셀 다운로드</button>
-        </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>지점</th><th>이름</th><th>근무일</th><th>총 근무시간</th><th>일평균</th><th>미퇴근</th><th>관리자 수정</th></tr></thead>
@@ -126,14 +125,30 @@
           </table>
         </div>
         <p class="muted small">일평균은 퇴근까지 완료된 날만 기준으로 계산합니다. 근무일이 0인 직원도 함께 표시됩니다.</p>
+      </div>
 
-        <div class="card-head section-head">
-          <h2>상세 기록</h2>
-          <button type="button" class="btn small" id="csv-btn">상세 기록 엑셀 다운로드</button>
+      <!-- 일자별 근무현황 -->
+      <div id="sub-daily" class="card" data-group="records">
+        <div class="card-head">
+          <h2>일자별 근무현황</h2>
+          <button type="button" class="btn small" id="csv-btn">일자별 근무현황 엑셀 다운로드</button>
         </div>
+        <form id="d-form" class="filters">
+          <label>월 선택 <input type="month" id="d-month"></label>
+          <label>시작일 <input type="date" id="d-from" required></label>
+          <label>종료일 <input type="date" id="d-to" required></label>
+          <label>지점
+            <select id="d-branch"></select>
+          </label>
+          <label>직원
+            <select id="d-user"><option value="">전체</option></select>
+          </label>
+          <button type="submit" class="btn primary">조회</button>
+          <button type="button" class="btn" id="add-record-btn">기록 추가</button>
+        </form>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>날짜</th><th>지점</th><th>이름</th><th>출근</th><th>퇴근</th><th>근무시간</th><th>비고</th><th>수정이력</th><th></th></tr></thead>
+            <thead><tr><th>지점</th><th>이름</th><th>출근</th><th>퇴근</th><th>근무시간</th><th>비고</th><th>수정이력</th><th></th></tr></thead>
             <tbody id="admin-records"></tbody>
           </table>
         </div>
@@ -170,7 +185,7 @@
         </div>
         <p class="muted small">
           지점을 옮겨도 이전 출퇴근 기록은 기존 지점 기록으로 남습니다.
-          퇴사자는 먼저 <b>비활성화</b>하세요. 로그인이 막히고 근태 기록은 그대로 보존되며, 오늘 현황·요약의 미출근자에서도 빠집니다.
+          퇴사자는 먼저 <b>비활성화</b>하세요. 로그인이 막히고 근태 기록은 그대로 보존되며, 오늘 현황·개인별 근무 현황의 미출근자에서도 빠집니다.
           비활성화된 직원은 <b>삭제</b>할 수 있습니다. 로그인 계정만 지워지고 이름과 근태 기록은 "퇴사"로 남습니다.
         </p>
       </div>

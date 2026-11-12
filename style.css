@@ -120,6 +120,8 @@ tr.inactive td { background: #fafafa; }
 .btn.danger-outline { color: var(--danger); border-color: #f3b5b2; }
 .btn.danger-outline:hover:not(:disabled) { background: #fff1f0; }
 td.actions { display: flex; gap: 4px; flex-wrap: wrap; }
+tr.day-head td { background: #f1f5fd; color: var(--text); font-weight: 600; font-size: 13px; border-top: 2px solid #d6e0f5; }
+tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px; }
 .section-head { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 tr.zero td { color: var(--muted); }
 .absent { white-space: normal; min-width: 160px; color: var(--muted); font-size: 13px; }
