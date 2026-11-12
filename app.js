@@ -113,7 +113,7 @@
   async function enterApp(user) {
     const { data, error } = await sb.from('profiles').select('*, branch:branches(name)').eq('id', user.id).single();
     if (error || !data) {
-      await sb.auth.signOut();
+      await sb.auth.signOut({ scope: 'local' });
       showView('login');
       showError($('login-error'), '사용자 정보를 불러오지 못했습니다. 관리자에게 문의하세요.');
       return;
@@ -145,7 +145,8 @@
   });
 
   $('logout-btn').addEventListener('click', async () => {
-    await sb.auth.signOut();
+    // 'local': 이 기기에서만 로그아웃 (다른 기기의 로그인은 유지)
+    await sb.auth.signOut({ scope: 'local' });
     me = null;
     showView('login');
   });
@@ -337,8 +338,16 @@
       const d = await staffApi({ action: 'list' });
       authStatus = new Map(d.users.map((u) => [u.id, u]));
     } catch (e) {
-      console.warn('계정 상태를 불러오지 못했습니다:', e.message);
       authStatus = new Map();
+      if (e.message === '로그인이 필요합니다.') {
+        // 다른 곳에서 세션이 끝난 경우: 다시 로그인하도록 안내
+        await sb.auth.signOut({ scope: 'local' });
+        me = null;
+        showView('login');
+        showError($('login-error'), '로그인이 만료되었습니다. 다시 로그인해 주세요.');
+        return;
+      }
+      console.warn('계정 상태를 불러오지 못했습니다:', e.message);
     }
   }
   const isDeleted = (id) => !!staff.find((s) => s.id === id)?.deleted_at;
@@ -608,6 +617,7 @@
 
   // 직원 관리
   function renderStaff() {
+    if (!me) return;
     const fb = $('s-branch').value;
     const curNa = $('na-branch').value;
     $('na-branch').innerHTML = branchOptions({ onlyActive: true });
