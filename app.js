@@ -529,23 +529,7 @@
     loadMyOvertime();
   });
 
-  // ---------------------------------------------------------------
-  //  비밀번호 변경
-  // ---------------------------------------------------------------
-  $('pw-btn').addEventListener('click', () => {
-    $('pw-form').reset(); showError($('pw-error'), '');
-    $('pw-dialog').showModal();
-  });
-  $('pw-cancel').addEventListener('click', () => $('pw-dialog').close());
-  $('pw-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const pw = $('pw-new').value;
-    if (pw !== $('pw-confirm').value) return showError($('pw-error'), '비밀번호가 일치하지 않습니다.');
-    const { error } = await sb.auth.updateUser({ password: pw });
-    if (error) return showError($('pw-error'), errMsg(error));
-    $('pw-dialog').close();
-    alert('비밀번호가 변경되었습니다.');
-  });
+  // ※ 직원 본인의 비밀번호 변경 기능은 없음 (매니저가 직원 관리 → [비밀번호 초기화]로만 변경)
 
   // ---------------------------------------------------------------
   //  관리자

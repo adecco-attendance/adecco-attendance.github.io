@@ -50,7 +50,6 @@
       </nav>
       <div class="user-menu">
         <span id="user-name"></span>
-        <button class="btn ghost small" id="pw-btn">비밀번호 변경</button>
         <button class="btn ghost small" id="logout-btn">로그아웃</button>
       </div>
     </header>
@@ -251,7 +250,7 @@
           <button type="submit" class="btn primary">직원 추가</button>
         </form>
         <p id="na-msg" class="msg" hidden></p>
-        <p class="muted small">직원은 로그인 화면에서 <b>아이디만</b> 입력하면 됩니다. 첫 로그인 후 상단 "비밀번호 변경"을 안내하세요.</p>
+        <p class="muted small">직원은 로그인 화면에서 <b>아이디만</b> 입력하면 됩니다. 직원은 비밀번호를 직접 바꿀 수 없으니, 바꿔야 할 때는 아래 목록의 <b>[비밀번호 초기화]</b>를 사용하세요.</p>
 
         <div class="card-head section-head"><h2>직원 목록</h2></div>
         <div class="filters">
@@ -326,7 +325,7 @@
     <form id="reset-form" method="dialog" class="dialog-body" autocomplete="off">
       <h3 id="reset-title">비밀번호 초기화</h3>
       <label>새 비밀번호 <input type="text" id="reset-pw" minlength="8" required placeholder="8자 이상" autocomplete="off"></label>
-      <p class="muted small">새 비밀번호를 직원에게 전달하고, 로그인 후 변경하도록 안내하세요.</p>
+      <p class="muted small">새 비밀번호를 직원에게 전달하세요.</p>
       <p id="reset-error" class="error" hidden></p>
       <div class="dialog-actions">
         <span class="spacer"></span>
@@ -368,21 +367,6 @@
         <button type="button" class="btn primary" id="a2hs-close">닫기</button>
       </div>
     </div>
-  </dialog>
-
-  <!-- 비밀번호 변경 다이얼로그 -->
-  <dialog id="pw-dialog">
-    <form id="pw-form" method="dialog" class="dialog-body">
-      <h3>비밀번호 변경</h3>
-      <label>새 비밀번호 <input type="password" id="pw-new" minlength="8" autocomplete="new-password" required></label>
-      <label>새 비밀번호 확인 <input type="password" id="pw-confirm" minlength="8" autocomplete="new-password" required></label>
-      <p id="pw-error" class="error" hidden></p>
-      <div class="dialog-actions">
-        <span class="spacer"></span>
-        <button type="button" class="btn" id="pw-cancel">취소</button>
-        <button type="submit" class="btn primary">변경</button>
-      </div>
-    </form>
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
