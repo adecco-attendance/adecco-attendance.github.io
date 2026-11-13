@@ -150,10 +150,17 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 dialog.map-dialog { width: min(760px, calc(100vw - 32px)); }
 #map-box { height: min(420px, 55vh); border-radius: 8px; border: 1px solid var(--line); }
 #map-addr { flex: 1; }
-.home-guide { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
-.home-guide summary { cursor: pointer; color: var(--primary); font-weight: 600; }
-.home-guide .guide-os { margin-top: 8px; color: var(--text); }
-.home-guide ol { margin: 4px 0; padding-left: 20px; }
+/* 홈 화면 바로가기 안내 */
+dialog.a2hs-dialog { width: min(440px, calc(100vw - 24px)); max-height: calc(100vh - 24px); }
+.a2hs-tabs { display: flex; gap: 4px; }
+#a2hs-steps { display: grid; gap: 12px; }
+.a2hs-step { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
+.a2hs-step p { margin: 0; font-size: 15px; color: var(--text); }
+.a2hs-step .sub { font-size: 13px; color: var(--muted); }
+.a2hs-num { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: var(--danger); color: #fff; font-size: 13px; font-weight: 700; align-items: center; justify-content: center; margin-right: 6px; }
+.a2hs-step svg { width: 100%; height: auto; display: block; }
+.a2hs-warn { background: #fff4d6; border-color: #f0d48a; }
+.a2hs-done { text-align: center; font-size: 14px; color: var(--ok); margin: 0; }
 .help-box { margin-top: 14px; padding: 12px 14px; background: #f6f8fb; border-radius: 8px; font-size: 13px; color: var(--muted); }
 .help-box b { color: var(--text); }
 .help-box ol { margin: 6px 0; padding-left: 20px; }

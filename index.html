@@ -36,16 +36,7 @@
       <p id="login-error" class="error" hidden></p>
       <button type="submit" class="btn primary block">로그인</button>
       <p class="muted small">계정은 매니저에게 문의하세요.</p>
-      <details class="home-guide">
-        <summary>📱 휴대폰 홈 화면에 바로가기 추가하기</summary>
-        <div class="guide-os"><b>안드로이드 (크롬)</b>
-          <ol><li>오른쪽 위 <b>⋮</b> 메뉴</li><li><b>홈 화면에 추가</b> → <b>추가</b></li></ol>
-        </div>
-        <div class="guide-os"><b>아이폰 (사파리)</b>
-          <ol><li>아래쪽 <b>공유</b> 버튼(□↑)</li><li><b>홈 화면에 추가</b> → <b>추가</b></li></ol>
-        </div>
-        <p class="muted small">홈 화면에 <b>"아데코 근태"</b> 아이콘이 생기고, 누르면 이 화면이 바로 열립니다.</p>
-      </details>
+      <button type="button" class="btn block a2hs-open">📱 홈 화면에 바로가기 추가</button>
     </form>
   </main>
 
@@ -85,6 +76,7 @@
         </div>
         <p id="clock-msg" class="msg" hidden></p>
         <p id="work-hours" class="muted small" hidden></p>
+        <button type="button" class="btn small ghost a2hs-open">📱 홈 화면에 바로가기 추가</button>
       </div>
 
       <!-- 초과근무 신청 -->
@@ -358,6 +350,22 @@
         <span class="spacer"></span>
         <button type="button" class="btn" id="map-cancel">취소</button>
         <button type="button" class="btn primary" id="map-ok" disabled>이 위치로 설정</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 홈 화면 바로가기 추가 안내 (그림 단계별) -->
+  <dialog id="a2hs-dialog" class="a2hs-dialog">
+    <div class="dialog-body">
+      <h3>📱 홈 화면에 바로가기 추가</h3>
+      <div class="a2hs-tabs">
+        <button type="button" class="subtab" data-os="ios">아이폰</button>
+        <button type="button" class="subtab" data-os="android">안드로이드</button>
+      </div>
+      <div id="a2hs-steps"></div>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn primary" id="a2hs-close">닫기</button>
       </div>
     </div>
   </dialog>

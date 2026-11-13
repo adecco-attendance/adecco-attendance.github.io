@@ -1566,6 +1566,127 @@
   });
 
   // ---------------------------------------------------------------
+  //  홈 화면 바로가기 추가 안내 (휴대폰 종류별 그림 단계)
+  //  ※ 휴대폰 운영체제가 막아 두어 자동 추가는 불가 → 누를 곳을 그림으로 안내
+  // ---------------------------------------------------------------
+  const UA = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/i.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(UA);
+  const inAppName = /KAKAOTALK/i.test(UA) ? '카카오톡' : /NAVER/i.test(UA) ? '네이버' : /Instagram/i.test(UA) ? '인스타그램'
+    : /FBAN|FBAV/i.test(UA) ? '페이스북' : /Line\//i.test(UA) ? '라인' : /DaumApps/i.test(UA) ? '다음' : '';
+  const isStandalone = window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
+
+  // 그림(SVG) 공통 조각
+  const SVG = (h, body) => `<svg viewBox="0 0 320 ${h}" xmlns="http://www.w3.org/2000/svg" font-family="inherit" role="img">${body}</svg>`;
+  const ring = (cx, cy, r) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e0443e" stroke-width="3"/>`;
+  const arrowDown = (x, y1, y2) => `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2 - 8}" stroke="#e0443e" stroke-width="3"/><polygon points="${x - 7},${y2 - 10} ${x + 7},${y2 - 10} ${x},${y2}" fill="#e0443e"/>`;
+  const arrowUp = (x, y1, y2) => `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2 + 8}" stroke="#e0443e" stroke-width="3"/><polygon points="${x - 7},${y2 + 10} ${x + 7},${y2 + 10} ${x},${y2}" fill="#e0443e"/>`;
+  const greyRow = (y, w = 150) => `<rect x="24" y="${y}" width="272" height="30" rx="6" fill="#fff"/><rect x="36" y="${y + 11}" width="${w}" height="8" rx="4" fill="#d1d1d6"/>`;
+  const hiRow = (y, label, icon) => `<rect x="24" y="${y}" width="272" height="34" rx="6" fill="#fff1f0" stroke="#e0443e" stroke-width="2"/>
+    <text x="36" y="${y + 22}" font-size="14" font-weight="700" fill="#111">${label}</text>
+    <text x="284" y="${y + 23}" font-size="16" text-anchor="end" fill="#111">${icon}</text>`;
+  const iconPreview = (y) => `<rect x="128" y="${y}" width="64" height="64" rx="14" fill="#fff" stroke="#d1d1d6"/>
+    <image href="icons/icon-192.png" x="132" y="${y + 4}" width="56" height="56"/>
+    <text x="160" y="${y + 82}" font-size="12" text-anchor="middle" fill="#333">아데코 근태</text>`;
+
+  const STEPS = {
+    // 아이폰 사파리 (아래쪽 주소창 + ⋯ 버튼 화면 기준, 예전 화면은 □↑ 버튼)
+    ios: [
+      {
+        text: 'Safari 화면 <b>맨 아래 주소창 오른쪽</b>의 <b>⋯</b> 버튼을 누르세요',
+        sub: '화면 맨 아래에 <b>□↑</b>(공유) 버튼이 보이면 그 버튼을 누르고 3번으로 가세요. 아래 막대가 안 보이면 화면을 살짝 위로 밀어 주세요.',
+        svg: SVG(96, `<rect width="320" height="96" rx="12" fill="#f2f2f7"/>
+          <text x="16" y="22" font-size="11" fill="#8e8e93">휴대폰 화면 맨 아래</text>
+          <rect x="12" y="40" width="244" height="40" rx="20" fill="#fff" stroke="#d1d1d6"/>
+          <text x="134" y="65" font-size="13" text-anchor="middle" fill="#333">adecco-attendance.github.io</text>
+          <circle cx="288" cy="60" r="20" fill="#fff" stroke="#d1d1d6"/>
+          <text x="288" y="66" font-size="20" font-weight="700" text-anchor="middle" fill="#111">⋯</text>
+          ${ring(288, 60, 25)}${arrowDown(288, 6, 33)}`),
+      },
+      {
+        text: '메뉴에서 <b>공유</b>를 누르세요',
+        svg: SVG(120, `<rect width="320" height="120" rx="12" fill="#f2f2f7"/>
+          ${hiRow(14, '공유', '□↑')}${greyRow(54, 120)}${greyRow(86, 160)}`),
+      },
+      {
+        text: '목록을 <b>아래로 내려서</b> <b>홈 화면에 추가</b>를 누르세요',
+        sub: '처음에는 "복사" 같은 항목만 보여요. 손가락으로 목록을 위로 밀어 아래쪽을 보세요.',
+        svg: SVG(170, `<rect width="320" height="170" rx="12" fill="#f2f2f7"/>
+          <circle cx="50" cy="26" r="14" fill="#d1d1d6"/><circle cx="100" cy="26" r="14" fill="#d1d1d6"/><circle cx="150" cy="26" r="14" fill="#d1d1d6"/><circle cx="200" cy="26" r="14" fill="#d1d1d6"/>
+          ${greyRow(52, 90)}${greyRow(86, 140)}${hiRow(124, '홈 화면에 추가', '⊞')}
+          <text x="300" y="104" font-size="11" text-anchor="end" fill="#e0443e">↓ 아래로 내리기</text>`),
+      },
+      {
+        text: '오른쪽 위 <b>추가</b>를 누르면 끝!',
+        sub: '홈 화면에 "아데코 근태" 아이콘이 생깁니다.',
+        svg: SVG(150, `<rect width="320" height="150" rx="12" fill="#f2f2f7"/>
+          <text x="20" y="28" font-size="14" fill="#007aff">취소</text>
+          <text x="160" y="28" font-size="14" font-weight="700" text-anchor="middle" fill="#111">홈 화면에 추가</text>
+          <text x="296" y="28" font-size="14" font-weight="700" text-anchor="end" fill="#007aff">추가</text>
+          ${ring(282, 23, 22)}${iconPreview(48)}`),
+      },
+    ],
+    // 안드로이드 크롬
+    android: [
+      {
+        text: '크롬 화면 <b>오른쪽 위</b>의 <b>⋮</b> 버튼을 누르세요',
+        svg: SVG(90, `<rect width="320" height="90" rx="12" fill="#f2f2f7"/>
+          <text x="16" y="20" font-size="11" fill="#8e8e93">휴대폰 화면 맨 위</text>
+          <rect x="12" y="30" width="240" height="38" rx="19" fill="#fff" stroke="#d1d1d6"/>
+          <text x="132" y="54" font-size="13" text-anchor="middle" fill="#333">adecco-attendance.github.io</text>
+          <text x="288" y="58" font-size="22" font-weight="700" text-anchor="middle" fill="#111">⋮</text>
+          ${ring(288, 50, 20)}${arrowUp(288, 88, 74)}`),
+      },
+      {
+        text: '메뉴에서 <b>홈 화면에 추가</b>를 누르세요',
+        sub: '메뉴 이름이 기종에 따라 "홈 화면에 추가" 또는 "바로가기 추가"로 보일 수 있어요.',
+        svg: SVG(130, `<rect width="320" height="130" rx="12" fill="#f2f2f7"/>
+          ${greyRow(12, 110)}${greyRow(46, 140)}${hiRow(82, '홈 화면에 추가', '⊞')}`),
+      },
+      {
+        text: '<b>추가</b>를 누르면 끝!',
+        sub: '"자동으로 추가" / "홈 화면에 추가"를 한 번 더 물으면 그것도 눌러 주세요.',
+        svg: SVG(150, `<rect width="320" height="150" rx="12" fill="#f2f2f7"/>
+          ${iconPreview(14)}
+          <text x="200" y="134" font-size="14" fill="#1a73e8">취소</text>
+          <text x="282" y="134" font-size="14" font-weight="700" text-anchor="middle" fill="#1a73e8">추가</text>
+          ${ring(282, 129, 22)}`),
+      },
+    ],
+  };
+
+  function renderA2hs(os) {
+    document.querySelectorAll('#a2hs-dialog [data-os]').forEach((b) => b.classList.toggle('active', b.dataset.os === os));
+    let html = '';
+    if (inAppName) {
+      html += `<div class="a2hs-step a2hs-warn">
+        <p>⚠️ 지금 <b>${inAppName} 앱 안</b>에서 열려 있어요. 여기서는 홈 화면에 추가할 수 없습니다.</p>
+        <p class="sub">${os === 'ios'
+          ? '오른쪽 아래(또는 위) <b>⋯</b> 버튼 → <b>Safari로 열기</b>를 누른 뒤, 열린 Safari에서 이 버튼을 다시 눌러 주세요.'
+          : '오른쪽 위(또는 아래) <b>⋮</b> 버튼 → <b>다른 브라우저로 열기</b>(크롬)를 누른 뒤, 크롬에서 이 버튼을 다시 눌러 주세요.'}</p>
+      </div>`;
+    }
+    html += STEPS[os].map((s, i) => `
+      <div class="a2hs-step">
+        <p><span class="a2hs-num">${i + 1}</span>${s.text}</p>
+        ${s.svg}
+        ${s.sub ? `<p class="sub">${s.sub}</p>` : ''}
+      </div>`).join('');
+    $('a2hs-steps').innerHTML = html;
+  }
+
+  document.querySelectorAll('.a2hs-open').forEach((btn) => {
+    if (isStandalone) btn.hidden = true; // 이미 홈 화면 아이콘으로 연 경우
+    btn.addEventListener('click', () => {
+      renderA2hs(isAndroid ? 'android' : 'ios');
+      $('a2hs-dialog').showModal();
+      $('a2hs-steps').scrollTop = 0;
+    });
+  });
+  document.querySelectorAll('#a2hs-dialog [data-os]').forEach((b) => b.addEventListener('click', () => renderA2hs(b.dataset.os)));
+  $('a2hs-close').addEventListener('click', () => $('a2hs-dialog').close());
+
+  // ---------------------------------------------------------------
   //  시작
   // ---------------------------------------------------------------
   (async () => {
