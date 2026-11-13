@@ -168,6 +168,7 @@
       return;
     }
     me = data;
+    adminLoaded = false; otLoaded = false; authStatus = new Map(); // 다른 계정으로 다시 로그인한 경우 대비
     setUserLabel();
     // 관리 화면: 본사 관리자 또는 지점 관리자(담당 지점만)
     $('admin-tab').hidden = !(me.is_admin || isManager());
@@ -233,9 +234,24 @@
     document.querySelectorAll('.subtab').forEach((x) => x.classList.toggle('active', x === t));
     document.querySelectorAll('#admin-view [data-group]').forEach((el) => { el.hidden = el.dataset.group !== sub; });
     if (sub === 'records') initAdmin();
-    if (sub === 'overtime') initAdmin().then(() => loadOvertimeAdmin());
-    if (sub === 'staff') Promise.all([loadBranches(), loadStaff(), loadAuthStatus()]).then(renderStaff);
-    if (sub === 'branches') Promise.all([loadBranches(), loadStaff()]).then(renderBranches);
+    if (sub === 'overtime') {
+      // 이미 한 번 불러왔으면 화면은 그대로 두고 조용히 갱신, 처음이면 바로 조회
+      if (adminLoaded) { loadOvertimeAdmin(otLoaded); loadOtBadge(); }
+      else initAdmin().then(() => loadOvertimeAdmin());
+      otLoaded = true;
+    }
+    // 이미 불러온 데이터로 먼저 바로 그리고, 최신 데이터가 오는 대로 다시 그림
+    // 표 안에서 입력 중이면 다시 그리지 않음 (입력 내용이 지워지지 않도록)
+    const later = (listId, render) => () => { if (!$(listId).contains(document.activeElement)) render(); };
+    if (sub === 'staff') {
+      renderStaff();
+      Promise.all([loadBranches(), loadStaff()]).then(later('staff-list', renderStaff)); // 빠른 DB 조회
+      loadAuthStatus().then(later('staff-list', renderStaff)); // 계정 상태(Edge Function)는 느려서 따로
+    }
+    if (sub === 'branches') {
+      renderBranches();
+      Promise.all([loadBranches(), loadStaff()]).then(later('branch-list', renderBranches));
+    }
   }));
 
   // ---------------------------------------------------------------
@@ -534,6 +550,8 @@
   //  관리자
   // ---------------------------------------------------------------
   let adminReady = false;
+  let adminLoaded = false; // 관리자 화면 데이터를 한 번이라도 불러왔는지 (로그인할 때마다 초기화)
+  let otLoaded = false;    // 초과근무 승인 목록을 한 번이라도 불러왔는지
 
   const branchName = (id) => branches.find((b) => b.id === id)?.name || '미지정';
 
@@ -658,9 +676,10 @@
     $(`${prefix}-form`).addEventListener('submit', (e) => { e.preventDefault(); loaders[prefix](); });
   });
 
-  function reloadRecords() {
-    loadPersonal();
-    loadDaily();
+  // quiet: 표를 "불러오는 중"으로 비우지 않고 결과가 오면 바로 바꿈 (탭 전환용)
+  function reloadRecords(quiet = false) {
+    loadPersonal(quiet);
+    loadDaily(quiet);
     loadTodaySummary();
     loadOtBadge();
   }
@@ -675,9 +694,20 @@
       $('o-status').value = 'pending';
       adminReady = true;
     }
-    await loadBranches();
-    await Promise.all([loadStaff(), loadAuthStatus()]);
-    reloadRecords();
+    if (!adminLoaded) {
+      // 처음 한 번: 지점·직원을 동시에 받아온 뒤 기록 조회 (느린 계정 상태는 기다리지 않음)
+      await Promise.all([loadBranches(), loadStaff()]);
+      fillUserSelects(); // 지점 이름이 들어간 선택 목록을 다시 채움
+      adminLoaded = true;
+      reloadRecords();
+      loadAuthStatus().then(() => {
+        // 비활성 직원이 있으면 오늘 현황·개인별 현황에서 빼도록 다시 그림
+        if ([...authStatus.values()].some((u) => u.banned)) { loadTodaySummary(); renderStaffSummary(); }
+      });
+      return;
+    }
+    // 이후 탭 전환: 지금 화면은 그대로 두고, 뒤에서 조용히 최신 내용으로 바꿈
+    Promise.all([loadBranches(), loadStaff()]).then(() => reloadRecords(true));
   }
 
   // 오늘 지점별 현황
@@ -750,10 +780,10 @@
   let personalRows = [];
   let personalOt = [];
   let personalSeq = 0;
-  async function loadPersonal() {
+  async function loadPersonal(quiet = false) {
     if (!$('p-from').value || !$('p-to').value) return;
     const seq = ++personalSeq;
-    $('staff-summary').innerHTML = '<tr><td colspan="9" class="empty">불러오는 중...</td></tr>';
+    if (!quiet) $('staff-summary').innerHTML = '<tr><td colspan="9" class="empty">불러오는 중...</td></tr>';
     const [att, ot] = await Promise.all([fetchRecords('p'), fetchApprovedOt('p')]);
     if (seq !== personalSeq) return; // 그 사이 조건이 바뀌어 새 조회가 시작됨 → 이전 결과는 버림
     const error = att.error || ot.error;
@@ -767,11 +797,11 @@
   let dailyRows = [];
   let dailyOt = [];
   let dailySeq = 0;
-  async function loadDaily() {
+  async function loadDaily(quiet = false) {
     if (!$('d-from').value || !$('d-to').value) return;
     const seq = ++dailySeq;
     const tbody = $('admin-records');
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">불러오는 중...</td></tr>';
+    if (!quiet) tbody.innerHTML = '<tr><td colspan="9" class="empty">불러오는 중...</td></tr>';
     const [att, ot] = await Promise.all([fetchRecords('d'), fetchApprovedOt('d')]);
     if (seq !== dailySeq) return;
     const error = att.error || ot.error;
@@ -967,11 +997,11 @@
   let otRows = [];
   let otAtt = [];
   let otSeq = 0;
-  async function loadOvertimeAdmin() {
+  async function loadOvertimeAdmin(quiet = false) {
     if (!$('o-from').value || !$('o-to').value) return;
     const seq = ++otSeq;
     const tbody = $('ot-list');
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">불러오는 중...</td></tr>';
+    if (!quiet) tbody.innerHTML = '<tr><td colspan="10" class="empty">불러오는 중...</td></tr>';
     const fb = $('o-branch').value;
     const fu = $('o-user').value;
     const st = $('o-status').value;
