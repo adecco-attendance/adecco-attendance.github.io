@@ -164,12 +164,18 @@
     if (error || !data) {
       await sb.auth.signOut({ scope: 'local' });
       showView('login');
-      showError($('login-error'), '사용자 정보를 불러오지 못했습니다. 관리자에게 문의하세요.');
+      showError($('login-error'), '사용자 정보를 불러오지 못했습니다. 매니저에게 문의하세요.');
       return;
     }
     me = data;
     setUserLabel();
-    $('admin-tab').hidden = !me.is_admin;
+    // 관리 화면: 본사 관리자 또는 지점 관리자(담당 지점만)
+    $('admin-tab').hidden = !(me.is_admin || isManager());
+    $('admin-tab').textContent = me.is_admin ? '매니저' : '슈퍼바이저';
+    document.querySelectorAll('.hq-only').forEach((el) => { el.hidden = !me.is_admin; });
+    $('manager-note').hidden = me.is_admin || !isManager();
+    $('manager-note').textContent = isManager() && !me.is_admin
+      ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 지점만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
     switchTab('employee');
     showView('app');
     startGps();
@@ -178,6 +184,9 @@
     loadMyRecords();
     loadMyOvertime();
   }
+
+  // 지점 관리자(본사 관리자가 아니고, 소속 지점이 있는 경우만 유효)
+  const isManager = () => !!(me && !me.is_admin && me.is_branch_manager && me.branch_id);
 
   function setUserLabel() {
     $('user-name').textContent = me.branch?.name ? `${me.branch.name} · ${me.name}님` : `${me.name}님`;
@@ -424,7 +433,7 @@
         <td>${r.clock_out ? hm(r.clock_out) : '<span class="tag-open">미퇴근</span>'}</td>
         <td>${fmtDur(reg)}</td>
         <td>${fmtDur(otMs)}${extra >= UNAPPROVED_SHOW_MS ? `<span class="tag-warn">미승인 ${fmtDur(extra)}</span>` : ''}</td>
-        <td class="note">${esc(r.note)}${r.updated_at ? ' <span class="edited">(관리자 수정)</span>' : ''}</td>
+        <td class="note">${esc(r.note)}${r.updated_at ? ' <span class="edited">(수정됨)</span>' : ''}</td>
       </tr>`;
     }).join('');
     $('my-summary').textContent = `근무일 ${data.length}일 · 정규 ${fmtDur(regSum)} · 초과근무 ${fmtDur(otSum)} · 총 근무시간 ${fmtDur(regSum + otSum)}`;
@@ -474,7 +483,7 @@
     });
     btn.disabled = false;
     if (error) return showOtMsg(errMsg(error), 'err');
-    showOtMsg(`초과근무를 신청했습니다 (${date} ${hm(start)}~${hm(end)}, ${fmtDur(end - start)}). 관리자 승인을 기다려 주세요.`, 'ok');
+    showOtMsg(`초과근무를 신청했습니다 (${date} ${hm(start)}~${hm(end)}, ${fmtDur(end - start)}). 매니저·슈퍼바이저의 승인을 기다려 주세요.`, 'ok');
     $('ot-reason').value = '';
     $('ot-month').value = date.slice(0, 7);
     loadMyOvertime();
@@ -564,6 +573,13 @@
       $(id).innerHTML = branchOptions({ includeAll: true });
       $(id).value = cur;
     });
+    // 지점 관리자는 담당 지점으로 고정
+    if (isManager()) {
+      ['p-branch', 'd-branch', 'o-branch'].forEach((id) => {
+        $(id).value = String(me.branch_id);
+        $(id).disabled = true;
+      });
+    }
   }
 
   async function loadStaff() {
@@ -587,6 +603,7 @@
 
   let authStatus = new Map(); // user_id -> { banned, last_sign_in_at, email }
   async function loadAuthStatus() {
+    if (!me?.is_admin) { authStatus = new Map(); return; } // 계정 상태 조회는 본사 관리자만
     try {
       const d = await staffApi({ action: 'list' });
       authStatus = new Map(d.users.map((u) => [u.id, u]));
@@ -632,7 +649,7 @@
     fillUserSelect('p');
     fillUserSelect('d');
     fillUserSelect('o');
-    $('edit-user').innerHTML = staff.filter((s) => !s.deleted_at).map((s) =>
+    $('edit-user').innerHTML = staff.filter((s) => !s.deleted_at && !(isManager() && s.id === me.id)).map((s) =>
       `<option value="${s.id}">${esc(s.name)} (${esc(branchName(s.branch_id))})</option>`).join('');
   }
 
@@ -666,7 +683,7 @@
   }
 
   async function initAdmin() {
-    if (!me?.is_admin) return;
+    if (!me?.is_admin && !isManager()) return;
     if (!adminReady) {
       const ym = ymd(new Date()).slice(0, 7);
       setMonth('p', ym);
@@ -688,7 +705,8 @@
     const tbody = $('today-summary');
     if (error) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
     const byUser = new Map(data.map((r) => [r.user_id, r]));
-    const groups = [...branches.map((b) => ({ id: b.id, name: b.name, active: b.is_active })), { id: null, name: '지점 미지정', active: true }];
+    let groups = [...branches.map((b) => ({ id: b.id, name: b.name, active: b.is_active })), { id: null, name: '지점 미지정', active: true }];
+    if (isManager()) groups = groups.filter((g) => g.id === me.branch_id); // 지점 관리자는 담당 지점만
     const total = { staff: 0, in: 0, working: 0, out: 0, absent: 0 };
     const rows = groups.map((g) => {
       const members = staff.filter((s) => (s.branch_id ?? null) === g.id && isActive(s.id));
@@ -806,7 +824,7 @@
         <td>${fmtDur(approvedOtMsForRow(r, dailyOt))}${extra >= UNAPPROVED_SHOW_MS ? `<span class="tag-warn">미승인 ${fmtDur(extra)}</span>` : ''}</td>
         <td class="note">${esc(r.note)}</td>
         <td class="edited">${r.updated_at ? `${esc(r.editor?.name || '알 수 없음')} · ${ymd(r.updated_at).slice(5)} ${hm(r.updated_at)}` : ''}</td>
-        <td><button class="btn small" data-edit="${r.id}">수정</button></td>
+        <td>${isManager() && r.user_id === me.id ? '<span class="muted small">매니저 처리</span>' : `<button class="btn small" data-edit="${r.id}">수정</button>`}</td>
       </tr>`;
       }).join('');
     }).join('');
@@ -880,7 +898,7 @@
   $('summary-csv-btn').addEventListener('click', () => {
     if (!summaryRows.length) return alert('다운로드할 내용이 없습니다. 먼저 조회하세요.');
     const mins = (ms) => Math.floor(ms / 60000);
-    const lines = [['기간', '지점', '이름', '근무일', '정규 근무(분)', '초과근무 승인(분)', '총 근무시간(분)', '총 근무시간(시간)', '일평균(분)', '미퇴근', '관리자 수정']];
+    const lines = [['기간', '지점', '이름', '근무일', '정규 근무(분)', '초과근무 승인(분)', '총 근무시간(분)', '총 근무시간(시간)', '일평균(분)', '미퇴근', '기록 수정']];
     const period = `${$('p-from').value} ~ ${$('p-to').value}`;
     summaryRows.forEach((e) => lines.push([
       period, e.branchLabel, e.name, e.days, mins(e.reg), mins(e.ot), mins(e.total), (mins(e.total) / 60).toFixed(2),
@@ -1025,9 +1043,9 @@
         <td>${actual}</td>
         <td>${q.status === 'approved' ? fmtDur(rec) : (q.status === 'pending' && a?.clock_out ? `<span class="muted">승인 시 ${fmtDur(overlapMs(+new Date(q.start_at), +new Date(q.end_at), +new Date(a.clock_in), +new Date(a.clock_out)))}</span>` : '-')}</td>
         <td>${otStatusTag(q.status)}</td>
-        <td class="actions">${q.status === 'pending'
-          ? '<button class="btn small primary" data-ot-approve>승인</button><button class="btn small danger-outline" data-ot-reject>반려</button>'
-          : reviewed}</td>
+        <td class="actions">${q.status !== 'pending' ? reviewed
+          : (isManager() && q.user_id === me.id) ? '<span class="muted small">매니저 처리</span>'
+            : '<button class="btn small primary" data-ot-approve>승인</button><button class="btn small danger-outline" data-ot-reject>반려</button>'}</td>
       </tr>`;
     }).join('');
     const pend = otRows.filter((q) => q.status === 'pending').length;
@@ -1078,6 +1096,12 @@
     downloadCsv(`초과근무_${$('o-from').value}_${$('o-to').value}.csv`, lines);
   });
 
+  // 권한: 일반 사용자(user) / 슈퍼바이저(supervisor, 소속 지점 관리) / 매니저(manager, 전체 관리)
+  const ROLES = [['user', '일반 사용자'], ['supervisor', '슈퍼바이저'], ['manager', '매니저']];
+  const roleOf = (s) => (s.is_admin ? 'manager' : s.is_branch_manager ? 'supervisor' : 'user');
+  const roleOptions = (cur) => ROLES.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('');
+  const roleFlags = (role) => ({ is_admin: role === 'manager', is_branch_manager: role === 'supervisor' });
+
   // 직원 관리
   function renderStaff() {
     if (!me) return;
@@ -1113,7 +1137,7 @@
         <td>${esc(loginIdOf(s.email))}</td>
         <td>${statusKnown ? (active ? '<span class="status-on">사용 중</span>' : '<span class="status-off">비활성</span>') : '-'}</td>
         <td class="edited">${last}</td>
-        <td><input type="checkbox" data-field="is_admin" ${s.is_admin ? 'checked' : ''} ${self ? 'disabled title="본인의 관리자 권한은 해제할 수 없습니다"' : ''}></td>
+        <td><select data-field="role" ${self ? 'disabled title="본인의 권한은 바꿀 수 없습니다"' : ''}>${roleOptions(roleOf(s))}</select></td>
         <td class="actions">
           <button class="btn small" data-save>저장</button>
           <button class="btn small" data-reset>비밀번호 초기화</button>
@@ -1143,6 +1167,12 @@
     msg.hidden = true;
     const loginId = $('na-id').value.trim().toLowerCase();
     const name = $('na-name').value.trim();
+    const flags = roleFlags($('na-role').value);
+    if (flags.is_branch_manager && !$('na-branch').value) {
+      msg.textContent = '슈퍼바이저는 소속 지점이 있어야 합니다. 지점을 선택하세요.';
+      msg.className = 'msg err'; msg.hidden = false; btn.disabled = false;
+      return;
+    }
     try {
       await staffApi({
         action: 'create',
@@ -1151,7 +1181,7 @@
         name,
         password: $('na-pw').value,
         branch_id: $('na-branch').value || null,
-        is_admin: $('na-admin').checked,
+        ...flags,
       });
       msg.textContent = `${name}(${loginId}) 직원을 추가했습니다. 아이디와 초기 비밀번호를 직원에게 전달하세요.`;
       msg.className = 'msg ok';
@@ -1243,7 +1273,10 @@
     if (!name) return alert('이름을 입력하세요.');
     const bv = tr.querySelector('[data-field="branch_id"]').value;
     const update = { name, branch_id: bv ? Number(bv) : null };
-    if (tr.dataset.id !== me.id) update.is_admin = tr.querySelector('[data-field="is_admin"]').checked;
+    if (tr.dataset.id !== me.id) {
+      Object.assign(update, roleFlags(tr.querySelector('[data-field="role"]').value));
+      if (update.is_branch_manager && !update.branch_id) return alert('슈퍼바이저는 소속 지점이 있어야 합니다. 소속 지점을 먼저 선택하세요.');
+    }
     e.target.disabled = true;
     const { error } = await sb.from('profiles').update(update).eq('id', tr.dataset.id);
     e.target.disabled = false;

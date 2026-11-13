@@ -27,7 +27,7 @@
       </label>
       <p id="login-error" class="error" hidden></p>
       <button type="submit" class="btn primary block">로그인</button>
-      <p class="muted small">계정은 관리자에게 문의하세요.</p>
+      <p class="muted small">계정은 매니저에게 문의하세요.</p>
     </form>
   </main>
 
@@ -37,7 +37,7 @@
       <strong class="brand"><span class="company-name"></span></strong>
       <nav class="tabs">
         <button class="tab active" data-view="employee">출퇴근</button>
-        <button class="tab" data-view="admin" id="admin-tab" hidden>관리자</button>
+        <button class="tab" data-view="admin" id="admin-tab" hidden>매니저</button>
       </nav>
       <div class="user-menu">
         <span id="user-name"></span>
@@ -86,7 +86,7 @@
         <p class="muted small" id="ot-help"></p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>근무일</th><th>신청 시간</th><th>구분</th><th>사유</th><th>상태</th><th>인정 시간</th><th>관리자 메모</th><th></th></tr></thead>
+            <thead><tr><th>근무일</th><th>신청 시간</th><th>구분</th><th>사유</th><th>상태</th><th>인정 시간</th><th>처리 메모</th><th></th></tr></thead>
             <tbody id="my-ot"></tbody>
           </table>
         </div>
@@ -112,8 +112,9 @@
       <div class="subtabs">
         <button class="subtab active" data-sub="records">출퇴근 기록</button>
         <button class="subtab" data-sub="overtime">초과근무 승인<span id="ot-badge" class="ot-badge" hidden></span></button>
-        <button class="subtab" data-sub="staff">직원 관리</button>
-        <button class="subtab" data-sub="branches">지점 관리</button>
+        <button class="subtab hq-only" data-sub="staff">직원 관리</button>
+        <button class="subtab hq-only" data-sub="branches">지점 관리</button>
+        <span id="manager-note" class="muted small" hidden></span>
       </div>
 
       <div id="sub-today" class="card" data-group="records">
@@ -149,7 +150,7 @@
         </form>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>지점</th><th>이름</th><th>근무일</th><th>정규 근무</th><th>초과근무(승인)</th><th>총 근무시간</th><th>일평균</th><th>미퇴근</th><th>관리자 수정</th></tr></thead>
+            <thead><tr><th>지점</th><th>이름</th><th>근무일</th><th>정규 근무</th><th>초과근무(승인)</th><th>총 근무시간</th><th>일평균</th><th>미퇴근</th><th>기록 수정</th></tr></thead>
             <tbody id="staff-summary"></tbody>
           </table>
         </div>
@@ -230,7 +231,13 @@
           <label>이름 <input id="na-name" required maxlength="30" placeholder="예) 홍길동"></label>
           <label>지점 <select id="na-branch"></select></label>
           <label>초기 비밀번호 <input id="na-pw" type="text" required minlength="8" placeholder="8자 이상" autocomplete="off"></label>
-          <label class="check-label"><input type="checkbox" id="na-admin"> 관리자</label>
+          <label>권한
+            <select id="na-role">
+              <option value="user">일반 사용자</option>
+              <option value="supervisor">슈퍼바이저</option>
+              <option value="manager">매니저</option>
+            </select>
+          </label>
           <button type="submit" class="btn primary">직원 추가</button>
         </form>
         <p id="na-msg" class="msg" hidden></p>
@@ -245,7 +252,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>이름</th><th>소속 지점</th><th>아이디</th><th>상태</th><th>최근 로그인</th><th>관리자</th><th>관리</th></tr></thead>
+            <thead><tr><th>이름</th><th>소속 지점</th><th>아이디</th><th>상태</th><th>최근 로그인</th><th>권한</th><th>관리</th></tr></thead>
             <tbody id="staff-list"></tbody>
           </table>
         </div>
