@@ -456,9 +456,8 @@
     $('ot-start').value = we || '18:00';
     const [h, m] = ($('ot-start').value).split(':').map(Number);
     $('ot-end').value = `${String((h + 2) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    $('ot-help').textContent = (we ? `정규 퇴근시간(${we}) 이후부터 신청할 수 있습니다. ` : '') +
-      '종료가 시작보다 이르면 다음 날로 계산합니다(예: 22:00~01:00). 지난 초과근무는 7일 이내에 사후 신청할 수 있습니다. ' +
-      '승인된 시간 중 실제 출근~퇴근 기록과 겹치는 시간만 인정됩니다.';
+    $('ot-help').textContent = we ? `정규 퇴근시간(${we}) 이후부터 신청할 수 있습니다.` : '';
+    $('ot-help').hidden = !we;
   }
 
   function showOtMsg(text, kind) {
