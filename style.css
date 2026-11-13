@@ -122,6 +122,23 @@ tr.inactive td { background: #fafafa; }
 td.actions { display: flex; gap: 4px; flex-wrap: wrap; }
 tr.day-head td { background: #f1f5fd; color: var(--text); font-weight: 600; font-size: 13px; border-top: 2px solid #d6e0f5; }
 tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px; }
+/* GPS */
+.gps-box { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.gps-status { margin: 0; font-size: 14px; padding: 8px 12px; border-radius: 8px; background: #f6f8fb; color: var(--muted); }
+.gps-status.ok { background: #e3f6eb; color: var(--ok); }
+.gps-status.err { background: #fff1f0; color: var(--danger); }
+.dist { color: var(--muted); font-size: 12px; margin-left: 4px; }
+.loc-cell { min-width: 300px; }
+.addr-row { display: flex; gap: 4px; margin-bottom: 4px; }
+.addr-input { flex: 1; min-width: 180px; }
+.coord-input { width: 100%; }
+.radius-input { width: 80px; }
+.loc-note { display: block; font-size: 12px; margin-top: 2px; }
+.loc-note.on { color: var(--ok); }
+.loc-note.off { color: var(--warn); }
+.help-box { margin-top: 14px; padding: 12px 14px; background: #f6f8fb; border-radius: 8px; font-size: 13px; color: var(--muted); }
+.help-box b { color: var(--text); }
+.help-box ol { margin: 6px 0; padding-left: 20px; }
 .section-head { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 tr.zero td { color: var(--muted); }
 .absent { white-space: normal; min-width: 160px; color: var(--muted); font-size: 13px; }

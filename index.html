@@ -57,6 +57,10 @@
           <div><span class="muted">근무시간</span><strong id="today-dur">-</strong></div>
         </div>
         <div id="status-badge" class="badge"></div>
+        <div id="gps-box" class="gps-box" hidden>
+          <p id="gps-status" class="gps-status"></p>
+          <button type="button" class="btn small" id="gps-retry">위치 다시 확인</button>
+        </div>
         <div class="clock-buttons">
           <button id="clock-in-btn" class="btn primary big" disabled>출근</button>
           <button id="clock-out-btn" class="btn danger big" disabled>퇴근</button>
@@ -197,9 +201,19 @@
         </form>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>지점명</th><th>소속 직원</th><th>사용</th><th></th></tr></thead>
+            <thead><tr><th>지점명</th><th>주소 / 위치 (위도, 경도)</th><th>허용 반경</th><th>소속 직원</th><th>사용</th><th>관리</th></tr></thead>
             <tbody id="branch-list"></tbody>
           </table>
+        </div>
+        <div class="help-box">
+          <b>지점 위치 등록 방법 (GPS 출퇴근)</b>
+          <ol>
+            <li><b>주소</b> 칸에 도로명 주소를 입력하고 <b>[주소로 찾기]</b> → 좌표가 자동으로 들어갑니다 (예: <code>서울특별시 중구 세종대로 110</code>)</li>
+            <li><b>[저장]</b> → <b>[지도에서 확인]</b>으로 핀이 지점 건물 위에 있는지 확인하세요</li>
+            <li>위치가 어긋나면: 구글 지도에서 건물을 <b>마우스 오른쪽 클릭</b>(휴대폰은 길게 누르기) → 맨 위 <code>37.5665, 126.9780</code> 같은 숫자를 눌러 복사 → <b>위치</b> 칸에 붙여넣고 저장</li>
+          </ol>
+          위치를 등록한 지점의 직원은 지점에서 <b>허용 반경 안</b>에 있을 때만 출근·퇴근할 수 있습니다.
+          위치 칸을 비워 두면 위치 확인 없이 어디서나 출퇴근할 수 있습니다.
         </div>
         <p class="muted small">
           더 이상 쓰지 않는 지점은 <b>사용</b>을 해제하세요. (직원 배정 목록에서 숨겨지고 과거 기록은 유지됩니다)

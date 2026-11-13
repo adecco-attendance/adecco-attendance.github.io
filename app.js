@@ -110,7 +110,7 @@
   }
 
   async function enterApp(user) {
-    const { data, error } = await sb.from('profiles').select('*, branch:branches(name)').eq('id', user.id).single();
+    const { data, error } = await sb.from('profiles').select('*, branch:branches(name, lat, lng, radius_m)').eq('id', user.id).single();
     if (error || !data) {
       await sb.auth.signOut({ scope: 'local' });
       showView('login');
@@ -122,6 +122,7 @@
     $('admin-tab').hidden = !me.is_admin;
     switchTab('employee');
     showView('app');
+    startGps();
     refreshToday();
     loadMyRecords();
   }
@@ -147,6 +148,7 @@
     // 'local': 이 기기에서만 로그아웃 (다른 기기의 로그인은 유지)
     await sb.auth.signOut({ scope: 'local' });
     me = null;
+    stopGps();
     showView('login');
   });
 
@@ -213,9 +215,96 @@
     else if (doneToday) { badge.textContent = '오늘 근무 완료'; badge.className = 'badge done'; }
     else { badge.textContent = '출근 전'; badge.className = 'badge'; }
 
-    $('clock-in-btn').disabled = !!(isOpen || (latest && latest.work_date === today));
-    $('clock-out-btn').disabled = !isOpen;
+    canIn = !(isOpen || (latest && latest.work_date === today));
+    canOut = !!isOpen;
+    applyClockButtons();
   }
+
+  // 근무 상태로 가능한지(canIn/canOut) + GPS 반경 안인지 둘 다 만족해야 버튼 활성화
+  let canIn = false;
+  let canOut = false;
+  function applyClockButtons() {
+    const ok = gpsAllowed();
+    $('clock-in-btn').disabled = !(canIn && ok);
+    $('clock-out-btn').disabled = !(canOut && ok);
+  }
+
+  // ---------------------------------------------------------------
+  //  GPS: 소속 지점 반경 안에서만 출퇴근 (서버에서도 다시 검사함)
+  // ---------------------------------------------------------------
+  let geo = { status: 'idle' }; // idle | locating | ok | denied | error | unsupported
+  let geoWatch = null;
+
+  // 소속 지점에 위치가 등록되어 있으면 GPS 확인 대상
+  const branchLoc = () => {
+    const b = me?.branch;
+    return b && b.lat != null && b.lng != null ? b : null;
+  };
+  function distanceM(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const rad = (d) => (d * Math.PI) / 180;
+    const a = Math.sin(rad(lat2 - lat1) / 2) ** 2 +
+      Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  const fmtDist = (m) => (m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`);
+  const currentDist = () => {
+    const b = branchLoc();
+    return b && geo.status === 'ok' ? distanceM(b.lat, b.lng, geo.lat, geo.lng) : null;
+  };
+  function gpsAllowed() {
+    const b = branchLoc();
+    if (!b) return true; // 위치 미설정 지점 → 확인 안 함
+    const d = currentDist();
+    return d != null && d <= b.radius_m;
+  }
+
+  function stopGps() {
+    if (geoWatch != null && navigator.geolocation) navigator.geolocation.clearWatch(geoWatch);
+    geoWatch = null;
+  }
+  function startGps() {
+    stopGps();
+    if (!branchLoc()) { geo = { status: 'idle' }; renderGps(); return; }
+    if (!navigator.geolocation || !window.isSecureContext) { geo = { status: 'unsupported' }; renderGps(); return; }
+    if (geo.status !== 'ok') geo = { status: 'locating' };
+    renderGps();
+    geoWatch = navigator.geolocation.watchPosition(
+      (p) => {
+        geo = { status: 'ok', lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() };
+        renderGps();
+      },
+      (err) => {
+        geo = { status: err.code === 1 ? 'denied' : 'error' };
+        renderGps();
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
+    );
+  }
+
+  function renderGps() {
+    const b = branchLoc();
+    $('gps-box').hidden = !b;
+    if (b) {
+      const el = $('gps-status');
+      let text = '';
+      let kind = '';
+      if (geo.status === 'locating' || geo.status === 'idle') text = '📍 현재 위치를 확인하는 중입니다...';
+      else if (geo.status === 'denied') { text = '위치 권한이 꺼져 있습니다. 휴대폰 설정에서 이 사이트의 위치 권한을 허용한 뒤 [위치 다시 확인]을 눌러주세요.'; kind = 'err'; }
+      else if (geo.status === 'unsupported') { text = '이 브라우저에서는 위치를 확인할 수 없습니다. 휴대폰의 기본 브라우저(크롬·사파리)로 접속해 주세요.'; kind = 'err'; }
+      else if (geo.status === 'error') { text = '위치를 확인하지 못했습니다. GPS(위치 서비스)를 켜고 [위치 다시 확인]을 눌러주세요.'; kind = 'err'; }
+      else {
+        const d = currentDist();
+        const accText = geo.acc > 50 ? ` (GPS 오차 약 ±${Math.round(geo.acc)}m)` : '';
+        if (d <= b.radius_m) { text = `📍 ${b.name}에서 약 ${fmtDist(d)} · 출퇴근 가능${accText}`; kind = 'ok'; }
+        else { text = `📍 ${b.name}에서 약 ${fmtDist(d)} 떨어져 있습니다. 지점 반경 ${b.radius_m}m 안에서만 출퇴근할 수 있습니다.${accText}`; kind = 'err'; }
+      }
+      el.textContent = text;
+      el.className = `gps-status ${kind}`;
+    }
+    applyClockButtons();
+  }
+  $('gps-retry').addEventListener('click', () => { geo = { status: 'locating' }; startGps(); });
 
   function setMsg(text, kind) {
     const el = $('clock-msg');
@@ -223,9 +312,11 @@
   }
 
   async function doClock(fn, label) {
+    if (!gpsAllowed()) return setMsg('지점 반경 안에서만 출퇴근할 수 있습니다.', 'err');
     if (!confirm(`${label} 하시겠습니까?`)) return;
     $('clock-in-btn').disabled = true; $('clock-out-btn').disabled = true;
-    const { data, error } = await sb.rpc(fn);
+    const args = branchLoc() && geo.status === 'ok' ? { p_lat: geo.lat, p_lng: geo.lng } : {};
+    const { data, error } = await sb.rpc(fn, args);
     if (error) setMsg(errMsg(error), 'err');
     else setMsg(`${label} 완료 (${hm(fn === 'clock_in' ? data.clock_in : data.clock_out)})`, 'ok');
     await refreshToday();
@@ -234,8 +325,11 @@
   $('clock-in-btn').addEventListener('click', () => doClock('clock_in', '출근'));
   $('clock-out-btn').addEventListener('click', () => doClock('clock_out', '퇴근'));
 
+  // 화면이 다시 보일 때 상태·위치 갱신, 숨겨지면 GPS 중지(배터리 절약)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && me) refreshToday();
+    if (!me) return;
+    if (document.visibilityState === 'visible') { refreshToday(); startGps(); }
+    else stopGps();
   });
 
   // ---------------------------------------------------------------
@@ -518,8 +612,8 @@
       <tr>
         <td>${esc(r.branch?.name || '미지정')}</td>
         <td>${esc(r.profile?.name)}</td>
-        <td>${hm(r.clock_in)}</td>
-        <td>${r.clock_out ? hm(r.clock_out) : '<span class="tag-open">미퇴근</span>'}</td>
+        <td>${hm(r.clock_in)}${r.in_dist_m != null ? `<span class="dist">${r.in_dist_m}m</span>` : ''}</td>
+        <td>${r.clock_out ? hm(r.clock_out) + (r.out_dist_m != null ? `<span class="dist">${r.out_dist_m}m</span>` : '') : '<span class="tag-open">미퇴근</span>'}</td>
         <td>${fmtDur(durMs(r))}</td>
         <td class="note">${esc(r.note)}</td>
         <td class="edited">${r.updated_at ? `${esc(r.editor?.name || '알 수 없음')} · ${ymd(r.updated_at).slice(5)} ${hm(r.updated_at)}` : ''}</td>
@@ -645,11 +739,12 @@
   // CSV (엑셀에서 한글 깨짐 방지를 위해 BOM 포함)
   $('csv-btn').addEventListener('click', () => {
     if (!dailyRows.length) return alert('다운로드할 기록이 없습니다. 먼저 조회하세요.');
-    const lines = [['날짜', '지점', '이름', '출근', '퇴근', '근무시간(분)', '비고', '수정자', '수정일시']];
+    const lines = [['날짜', '지점', '이름', '출근', '출근 위치(지점에서 m)', '퇴근', '퇴근 위치(지점에서 m)', '근무시간(분)', '비고', '수정자', '수정일시']];
     dailyRows.slice().reverse().forEach((r) => {
       const ms = durMs(r);
       lines.push([
-        r.work_date, r.branch?.name || '미지정', r.profile?.name, hm(r.clock_in), r.clock_out ? hm(r.clock_out) : '',
+        r.work_date, r.branch?.name || '미지정', r.profile?.name,
+        hm(r.clock_in), r.in_dist_m ?? '', r.clock_out ? hm(r.clock_out) : '', r.out_dist_m ?? '',
         ms ? Math.floor(ms / 60000) : '', r.note, r.editor?.name,
         r.updated_at ? `${ymd(r.updated_at)} ${hm(r.updated_at)}` : '',
       ]);
@@ -839,17 +934,45 @@
   });
 
   // 지점 관리
+  const hasLoc = (b) => b.lat != null && b.lng != null;
+  const coordText = (b) => (hasLoc(b) ? `${b.lat}, ${b.lng}` : '');
+
+  // 지도에서 복사한 좌표 문자열 → { lat, lng } (빈 값이면 null = 위치 해제)
+  //  "37.5665, 126.9780" / "37.5665° N, 126.9780° E" / 위도·경도 순서가 바뀐 경우도 처리
+  function parseCoords(text) {
+    const t = String(text || '').trim();
+    if (!t) return null;
+    const nums = (t.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    if (nums.length !== 2) throw new Error('좌표는 "37.5665, 126.9780"처럼 숫자 두 개로 입력하세요.');
+    let [lat, lng] = nums;
+    if (lat >= 124 && lat <= 132 && lng >= 33 && lng <= 39) [lat, lng] = [lng, lat]; // 순서 바뀜 보정
+    if (!(lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132)) {
+      throw new Error('한국 범위의 좌표가 아닙니다. 구글 지도에서 복사한 값인지 확인하세요.');
+    }
+    return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
+  }
+
   function renderBranches() {
     $('branch-list').innerHTML = branches.map((b) => `
       <tr data-id="${b.id}">
         <td><input type="text" value="${esc(b.name)}" maxlength="30" data-field="name"></td>
-        <td class="num">${staff.filter((s) => s.branch_id === b.id).length}명</td>
+        <td class="loc-cell">
+          <div class="addr-row">
+            <input type="text" class="addr-input" value="${esc(b.address || '')}" data-field="address" placeholder="도로명 주소 입력">
+            <button type="button" class="btn small" data-bgeo>주소로 찾기</button>
+          </div>
+          <input type="text" class="coord-input" value="${esc(coordText(b))}" data-field="coords" placeholder="위도, 경도 (자동 입력 또는 붙여넣기)">
+          <span class="loc-note ${hasLoc(b) ? 'on' : 'off'}" data-field="note">${hasLoc(b) ? 'GPS 확인 사용 중' : '미설정 · 위치 확인 안 함'}</span>
+        </td>
+        <td><input type="number" class="radius-input" value="${b.radius_m ?? 100}" min="30" max="2000" step="10" data-field="radius_m"> m</td>
+        <td class="num">${staff.filter((s) => s.branch_id === b.id && !s.deleted_at).length}명</td>
         <td><input type="checkbox" data-field="is_active" ${b.is_active ? 'checked' : ''}></td>
-        <td>
+        <td class="actions">
           <button class="btn small" data-bsave>저장</button>
+          <button class="btn small" data-bmap ${hasLoc(b) ? '' : 'disabled'}>지도에서 확인</button>
           <button class="btn small" data-bdel>삭제</button>
         </td>
-      </tr>`).join('') || '<tr><td colspan="4" class="empty">등록된 지점이 없습니다. 위에서 지점을 추가하세요.</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="6" class="empty">등록된 지점이 없습니다. 위에서 지점을 추가하세요.</td></tr>';
   }
 
   $('branch-form').addEventListener('submit', async (e) => {
@@ -870,13 +993,61 @@
     if (e.target.matches('[data-bsave]')) {
       const name = tr.querySelector('[data-field="name"]').value.trim();
       if (!name) return alert('지점 이름을 입력하세요.');
-      const { error } = await sb.from('branches')
-        .update({ name, is_active: tr.querySelector('[data-field="is_active"]').checked }).eq('id', id);
+      let loc;
+      try { loc = parseCoords(tr.querySelector('[data-field="coords"]').value); } catch (err) { return alert(err.message); }
+      const radius = Number(tr.querySelector('[data-field="radius_m"]').value);
+      if (!Number.isInteger(radius) || radius < 30 || radius > 2000) return alert('허용 반경은 30~2000m 사이의 정수로 입력하세요.');
+      const update = {
+        name,
+        is_active: tr.querySelector('[data-field="is_active"]').checked,
+        lat: loc ? loc.lat : null,
+        lng: loc ? loc.lng : null,
+        radius_m: radius,
+        address: tr.querySelector('[data-field="address"]').value.trim() || null,
+      };
+      e.target.disabled = true;
+      const { error } = await sb.from('branches').update(update).eq('id', id);
+      e.target.disabled = false;
       if (error) return alert(errMsg(error));
-      e.target.textContent = '저장됨';
-      setTimeout(() => { e.target.textContent = '저장'; }, 1500);
       await loadBranches();
-      if (me.branch_id === id) { me.branch = { name }; setUserLabel(); }
+      renderBranches();
+      if (me.branch_id === id) {
+        me.branch = { name, lat: update.lat, lng: update.lng, radius_m: radius };
+        setUserLabel();
+        startGps();
+      }
+    } else if (e.target.matches('[data-bgeo]')) {
+      // 주소 → 좌표 (OpenStreetMap 무료 검색, 키 불필요). 저장은 [저장]을 눌러야 반영
+      const addr = tr.querySelector('[data-field="address"]').value.trim();
+      const note = tr.querySelector('[data-field="note"]');
+      if (!addr) return alert('주소를 입력하세요.');
+      e.target.disabled = true;
+      note.className = 'loc-note'; note.textContent = '주소를 찾는 중...';
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=kr&limit=1&accept-language=ko&q=${encodeURIComponent(addr)}`;
+        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!res.ok) throw new Error(`검색 실패 (${res.status})`);
+        const list = await res.json();
+        if (!list.length) {
+          note.className = 'loc-note off';
+          note.textContent = '주소를 찾지 못했습니다. 도로명 주소로 다시 입력하거나 구글 지도 좌표를 붙여넣으세요.';
+          return;
+        }
+        const lat = Math.round(Number(list[0].lat) * 1e6) / 1e6;
+        const lng = Math.round(Number(list[0].lon) * 1e6) / 1e6;
+        tr.querySelector('[data-field="coords"]').value = `${lat}, ${lng}`;
+        const place = String(list[0].display_name || '').split(',').slice(0, 3).join(',');
+        note.className = 'loc-note on';
+        note.textContent = `찾음: ${place} → [저장]을 눌러야 반영됩니다`;
+      } catch (err) {
+        note.className = 'loc-note off';
+        note.textContent = `주소 검색을 할 수 없습니다 (${err.message}). 구글 지도 좌표를 붙여넣으세요.`;
+      } finally {
+        e.target.disabled = false;
+      }
+    } else if (e.target.matches('[data-bmap]')) {
+      const b = branches.find((x) => x.id === id);
+      if (b && hasLoc(b)) window.open(`https://www.google.com/maps?q=${b.lat},${b.lng}`, '_blank', 'noopener');
     } else if (e.target.matches('[data-bdel]')) {
       if (!confirm(`'${branchName(id)}' 지점을 삭제하시겠습니까?`)) return;
       const { error } = await sb.from('branches').delete().eq('id', id);
