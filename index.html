@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>아데코코리아</title>
+  <!-- 홈 화면 바로가기: 이름·아이콘 (display=browser 라서 '앱 설치'는 권하지 않고 바로가기로만 추가됨) -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="application-name" content="아데코 근태">
+  <meta name="apple-mobile-web-app-title" content="아데코 근태">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,6 +36,16 @@
       <p id="login-error" class="error" hidden></p>
       <button type="submit" class="btn primary block">로그인</button>
       <p class="muted small">계정은 매니저에게 문의하세요.</p>
+      <details class="home-guide">
+        <summary>📱 휴대폰 홈 화면에 바로가기 추가하기</summary>
+        <div class="guide-os"><b>안드로이드 (크롬)</b>
+          <ol><li>오른쪽 위 <b>⋮</b> 메뉴</li><li><b>홈 화면에 추가</b> → <b>추가</b></li></ol>
+        </div>
+        <div class="guide-os"><b>아이폰 (사파리)</b>
+          <ol><li>아래쪽 <b>공유</b> 버튼(□↑)</li><li><b>홈 화면에 추가</b> → <b>추가</b></li></ol>
+        </div>
+        <p class="muted small">홈 화면에 <b>"아데코 근태"</b> 아이콘이 생기고, 누르면 이 화면이 바로 열립니다.</p>
+      </details>
     </form>
   </main>
 

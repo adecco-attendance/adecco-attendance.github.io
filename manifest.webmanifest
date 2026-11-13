@@ -1,0 +1,15 @@
+{
+  "name": "아데코 근태",
+  "short_name": "아데코 근태",
+  "description": "아데코코리아 출·퇴근 등록",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "browser",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
