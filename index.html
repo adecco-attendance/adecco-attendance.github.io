@@ -66,6 +66,30 @@
           <button id="clock-out-btn" class="btn danger big" disabled>퇴근</button>
         </div>
         <p id="clock-msg" class="msg" hidden></p>
+        <p id="work-hours" class="muted small" hidden></p>
+      </div>
+
+      <!-- 초과근무 신청 -->
+      <div class="card">
+        <div class="card-head">
+          <h2>초과근무 신청</h2>
+          <input type="month" id="ot-month">
+        </div>
+        <form id="ot-form" class="filters">
+          <label>날짜 <input type="date" id="ot-date" required></label>
+          <label>시작 <input type="time" id="ot-start" required></label>
+          <label>종료 <input type="time" id="ot-end" required></label>
+          <label class="grow">사유 <input type="text" id="ot-reason" maxlength="300" required placeholder="예) 월말 정산 마감"></label>
+          <button type="submit" class="btn primary">신청</button>
+        </form>
+        <p id="ot-msg" class="msg" hidden></p>
+        <p class="muted small" id="ot-help"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>근무일</th><th>신청 시간</th><th>구분</th><th>사유</th><th>상태</th><th>인정 시간</th><th>관리자 메모</th><th></th></tr></thead>
+            <tbody id="my-ot"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card">
@@ -75,7 +99,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>날짜</th><th>출근</th><th>퇴근</th><th>근무시간</th><th>비고</th></tr></thead>
+            <thead><tr><th>날짜</th><th>출근</th><th>퇴근</th><th>정규 근무</th><th>초과근무(승인)</th><th>비고</th></tr></thead>
             <tbody id="my-records"></tbody>
           </table>
         </div>
@@ -87,6 +111,7 @@
     <section id="admin-view" class="container" hidden>
       <div class="subtabs">
         <button class="subtab active" data-sub="records">출퇴근 기록</button>
+        <button class="subtab" data-sub="overtime">초과근무 승인<span id="ot-badge" class="ot-badge" hidden></span></button>
         <button class="subtab" data-sub="staff">직원 관리</button>
         <button class="subtab" data-sub="branches">지점 관리</button>
       </div>
@@ -124,7 +149,7 @@
         </form>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>지점</th><th>이름</th><th>근무일</th><th>총 근무시간</th><th>일평균</th><th>미퇴근</th><th>관리자 수정</th></tr></thead>
+            <thead><tr><th>지점</th><th>이름</th><th>근무일</th><th>정규 근무</th><th>초과근무(승인)</th><th>총 근무시간</th><th>일평균</th><th>미퇴근</th><th>관리자 수정</th></tr></thead>
             <tbody id="staff-summary"></tbody>
           </table>
         </div>
@@ -152,11 +177,48 @@
         </form>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>지점</th><th>이름</th><th>출근</th><th>퇴근</th><th>근무시간</th><th>비고</th><th>수정이력</th><th></th></tr></thead>
+            <thead><tr><th>지점</th><th>이름</th><th>출근</th><th>퇴근</th><th>정규 근무</th><th>초과근무(승인)</th><th>비고</th><th>수정이력</th><th></th></tr></thead>
             <tbody id="admin-records"></tbody>
           </table>
         </div>
         <p class="muted small" id="admin-summary"></p>
+      </div>
+
+      <!-- 초과근무 승인 -->
+      <div id="sub-overtime" class="card" data-group="overtime" hidden>
+        <div class="card-head">
+          <h2>초과근무 신청 현황</h2>
+          <button type="button" class="btn small" id="ot-csv-btn">초과근무 엑셀 다운로드</button>
+        </div>
+        <form id="o-form" class="filters">
+          <label>월 선택 <input type="month" id="o-month"></label>
+          <label>시작일 <input type="date" id="o-from" required></label>
+          <label>종료일 <input type="date" id="o-to" required></label>
+          <label>지점
+            <select id="o-branch"></select>
+          </label>
+          <label>직원
+            <select id="o-user"><option value="">전체</option></select>
+          </label>
+          <label>상태
+            <select id="o-status">
+              <option value="">전체</option>
+              <option value="pending">대기</option>
+              <option value="approved">승인</option>
+              <option value="rejected">반려</option>
+              <option value="cancelled">취소</option>
+            </select>
+          </label>
+          <button type="submit" class="btn primary">조회</button>
+        </form>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>근무일</th><th>지점</th><th>이름</th><th>신청 시간</th><th>구분</th><th>사유</th><th>실제 출퇴근</th><th>인정 시간</th><th>상태</th><th>처리</th></tr></thead>
+            <tbody id="ot-list"></tbody>
+          </table>
+        </div>
+        <p class="muted small" id="ot-summary"></p>
+        <p class="muted small">인정 시간 = 승인된 신청 시간 중 실제 출근~퇴근 기록과 겹치는 시간. 반려할 때는 사유를 입력해야 합니다.</p>
       </div>
 
       <div id="sub-staff" class="card" data-group="staff" hidden>
@@ -201,7 +263,7 @@
         </form>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>지점명</th><th>주소 / 위치 (위도, 경도)</th><th>허용 반경</th><th>소속 직원</th><th>사용</th><th>관리</th></tr></thead>
+            <thead><tr><th>지점명</th><th>정규 근무시간</th><th>주소 / 위치 (위도, 경도)</th><th>허용 반경</th><th>소속 직원</th><th>사용</th><th>관리</th></tr></thead>
             <tbody id="branch-list"></tbody>
           </table>
         </div>

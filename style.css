@@ -122,6 +122,17 @@ tr.inactive td { background: #fafafa; }
 td.actions { display: flex; gap: 4px; flex-wrap: wrap; }
 tr.day-head td { background: #f1f5fd; color: var(--text); font-weight: 600; font-size: 13px; border-top: 2px solid #d6e0f5; }
 tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px; }
+/* 초과근무 */
+.filters label.grow { flex: 1 1 220px; }
+.st { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.st-pending { background: #fff4d6; color: #8a5a00; }
+.st-approved { background: #e3f6eb; color: var(--ok); }
+.st-rejected { background: #fff1f0; color: var(--danger); }
+.st-cancelled { background: #eef1f6; color: var(--muted); }
+.tag-warn { display: block; font-size: 12px; color: var(--warn); }
+.ot-badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+.time-input { width: 105px; }
+
 /* GPS */
 .gps-box { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
 .gps-status { margin: 0; font-size: 14px; padding: 8px 12px; border-radius: 8px; background: #f6f8fb; color: var(--muted); }

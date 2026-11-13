@@ -48,6 +48,56 @@
     const end = row.clock_out ? new Date(row.clock_out) : null;
     return end ? end - new Date(row.clock_in) : 0;
   }
+
+  // ---- 근무시간 집계: 정규(지점 근무시간 안) + 승인된 초과근무(실제 근무와 겹치는 부분) ----
+  const kstAt = (dateStr, time) => new Date(`${dateStr}T${String(time).slice(0, 5)}:00+09:00`).getTime();
+  const overlapMs = (s1, e1, s2, e2) => Math.max(0, Math.min(e1, e2) - Math.max(s1, s2));
+  const tmLabel = (t) => (t ? String(t).slice(0, 5) : '');
+
+  // 정규 근무시간: 기록 당시 지점의 정규시간 안에서 실제로 근무한 시간 (지점 정보 없으면 실제 전체)
+  function regularMs(row) {
+    if (!row.clock_in || !row.clock_out) return 0;
+    const s = +new Date(row.clock_in);
+    const e = +new Date(row.clock_out);
+    const b = row.branch;
+    if (!b || !b.work_start || !b.work_end) return e - s;
+    return overlapMs(s, e, kstAt(row.work_date, b.work_start), kstAt(row.work_date, b.work_end));
+  }
+  // 이 출근 기록과 겹치는 승인 초과근무 시간
+  function approvedOtMsForRow(row, reqs) {
+    if (!row.clock_out) return 0;
+    const s = +new Date(row.clock_in);
+    const e = +new Date(row.clock_out);
+    return reqs.filter((q) => q.status === 'approved' && q.user_id === row.user_id)
+      .reduce((t, q) => t + overlapMs(s, e, +new Date(q.start_at), +new Date(q.end_at)), 0);
+  }
+  // 정규시간 밖 미승인 근무는 10분 이상일 때만 화면에 표시 (조금 일찍 출근한 경우 등은 생략)
+  const UNAPPROVED_SHOW_MS = 10 * 60 * 1000;
+  // 정규시간 밖에서 근무했지만 승인되지 않은 시간 (관리자 확인용)
+  const unapprovedMsForRow = (row, reqs) =>
+    Math.max(0, durMs(row) - regularMs(row) - approvedOtMsForRow(row, reqs));
+  // 초과근무 신청 1건의 인정 시간 (실제 근무와 겹치는 부분)
+  function recognizedOtMs(req, attRows) {
+    if (req.status !== 'approved') return 0;
+    const rs = +new Date(req.start_at);
+    const re = +new Date(req.end_at);
+    return attRows.filter((a) => a.user_id === req.user_id && a.clock_out)
+      .reduce((t, a) => t + overlapMs(rs, re, +new Date(a.clock_in), +new Date(a.clock_out)), 0);
+  }
+  const OT_STATUS = {
+    pending: ['대기', 'st-pending'], approved: ['승인', 'st-approved'],
+    rejected: ['반려', 'st-rejected'], cancelled: ['취소', 'st-cancelled'],
+  };
+  const otStatusTag = (s) => `<span class="st ${OT_STATUS[s]?.[1] || ''}">${OT_STATUS[s]?.[0] || s}</span>`;
+  const otTimeLabel = (q) => {
+    const nextDay = ymd(q.end_at) !== ymd(q.start_at) ? '(익일)' : '';
+    return `${hm(q.start_at)}~${nextDay}${hm(q.end_at)}`;
+  };
+  const shiftDate = (dateStr, days) => {
+    const d = new Date(`${dateStr}T12:00:00+09:00`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return ymd(d);
+  };
   function fmtDur(ms) {
     if (!ms || ms < 0) return '-';
     const min = Math.floor(ms / 60000);
@@ -110,7 +160,7 @@
   }
 
   async function enterApp(user) {
-    const { data, error } = await sb.from('profiles').select('*, branch:branches(name, lat, lng, radius_m)').eq('id', user.id).single();
+    const { data, error } = await sb.from('profiles').select('*, branch:branches(name, lat, lng, radius_m, work_start, work_end)').eq('id', user.id).single();
     if (error || !data) {
       await sb.auth.signOut({ scope: 'local' });
       showView('login');
@@ -124,7 +174,9 @@
     showView('app');
     startGps();
     refreshToday();
+    setupOvertimeForm();
     loadMyRecords();
+    loadMyOvertime();
   }
 
   function setUserLabel() {
@@ -172,6 +224,7 @@
     document.querySelectorAll('.subtab').forEach((x) => x.classList.toggle('active', x === t));
     document.querySelectorAll('#admin-view [data-group]').forEach((el) => { el.hidden = el.dataset.group !== sub; });
     if (sub === 'records') initAdmin();
+    if (sub === 'overtime') initAdmin().then(() => loadOvertimeAdmin());
     if (sub === 'staff') Promise.all([loadBranches(), loadStaff(), loadAuthStatus()]).then(renderStaff);
     if (sub === 'branches') Promise.all([loadBranches(), loadStaff()]).then(renderBranches);
   }));
@@ -321,6 +374,7 @@
     else setMsg(`${label} 완료 (${hm(fn === 'clock_in' ? data.clock_in : data.clock_out)})`, 'ok');
     await refreshToday();
     loadMyRecords();
+    loadMyOvertime();
   }
   $('clock-in-btn').addEventListener('click', () => doClock('clock_in', '출근'));
   $('clock-out-btn').addEventListener('click', () => doClock('clock_out', '퇴근'));
@@ -341,24 +395,130 @@
   async function loadMyRecords() {
     if (!me || !$('my-month').value) return;
     const [from, to] = monthRange($('my-month').value);
-    const { data, error } = await sb.from('attendance')
-      .select('*').eq('user_id', me.id)
-      .gte('work_date', from).lte('work_date', to)
-      .order('work_date', { ascending: false });
+    const [att, ot] = await Promise.all([
+      sb.from('attendance')
+        .select('*, branch:branches(name, work_start, work_end)').eq('user_id', me.id)
+        .gte('work_date', from).lte('work_date', to)
+        .order('work_date', { ascending: false }),
+      sb.from('overtime_requests').select('*').eq('user_id', me.id).eq('status', 'approved')
+        .gte('work_date', shiftDate(from, -1)).lte('work_date', to),
+    ]);
     const tbody = $('my-records');
-    if (error) { tbody.innerHTML = `<tr><td colspan="5" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
-    if (!data.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">기록이 없습니다.</td></tr>'; $('my-summary').textContent = ''; return; }
-    tbody.innerHTML = data.map((r) => `
+    const error = att.error || ot.error;
+    if (error) { tbody.innerHTML = `<tr><td colspan="6" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
+    const data = att.data;
+    const reqs = ot.data;
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">기록이 없습니다.</td></tr>'; $('my-summary').textContent = ''; return; }
+    let regSum = 0;
+    let otSum = 0;
+    tbody.innerHTML = data.map((r) => {
+      const reg = regularMs(r);
+      const otMs = approvedOtMsForRow(r, reqs);
+      const extra = unapprovedMsForRow(r, reqs);
+      regSum += reg;
+      otSum += otMs;
+      return `
       <tr>
         <td>${dateLabel(r.work_date)}</td>
         <td>${hm(r.clock_in)}</td>
         <td>${r.clock_out ? hm(r.clock_out) : '<span class="tag-open">미퇴근</span>'}</td>
-        <td>${fmtDur(durMs(r))}</td>
+        <td>${fmtDur(reg)}</td>
+        <td>${fmtDur(otMs)}${extra >= UNAPPROVED_SHOW_MS ? `<span class="tag-warn">미승인 ${fmtDur(extra)}</span>` : ''}</td>
         <td class="note">${esc(r.note)}${r.updated_at ? ' <span class="edited">(관리자 수정)</span>' : ''}</td>
-      </tr>`).join('');
-    const total = data.reduce((s, r) => s + durMs(r), 0);
-    $('my-summary').textContent = `근무일 ${data.length}일 · 총 근무시간 ${fmtDur(total)}`;
+      </tr>`;
+    }).join('');
+    $('my-summary').textContent = `근무일 ${data.length}일 · 정규 ${fmtDur(regSum)} · 초과근무 ${fmtDur(otSum)} · 총 근무시간 ${fmtDur(regSum + otSum)}`;
   }
+
+  // ---------------------------------------------------------------
+  //  직원: 초과근무 신청
+  // ---------------------------------------------------------------
+  $('ot-month').value = ymd(new Date()).slice(0, 7);
+  $('ot-month').addEventListener('change', loadMyOvertime);
+
+  // 정규 근무시간 안내 + 신청 기본값(정규 퇴근 ~ +2시간)
+  function setupOvertimeForm() {
+    const b = me?.branch;
+    const ws = tmLabel(b?.work_start);
+    const we = tmLabel(b?.work_end);
+    $('work-hours').hidden = !we;
+    $('work-hours').textContent = we ? `정규 근무시간 ${ws} ~ ${we} (${b.name})` : '';
+    $('ot-date').value = ymd(new Date());
+    $('ot-start').value = we || '18:00';
+    const [h, m] = ($('ot-start').value).split(':').map(Number);
+    $('ot-end').value = `${String((h + 2) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    $('ot-help').textContent = (we ? `정규 퇴근시간(${we}) 이후부터 신청할 수 있습니다. ` : '') +
+      '종료가 시작보다 이르면 다음 날로 계산합니다(예: 22:00~01:00). 지난 초과근무는 7일 이내에 사후 신청할 수 있습니다. ' +
+      '승인된 시간 중 실제 출근~퇴근 기록과 겹치는 시간만 인정됩니다.';
+  }
+
+  function showOtMsg(text, kind) {
+    const el = $('ot-msg');
+    el.textContent = text; el.className = `msg ${kind || ''}`; el.hidden = !text;
+  }
+
+  $('ot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const date = $('ot-date').value;
+    const start = new Date(`${date}T${$('ot-start').value}:00+09:00`);
+    let end = new Date(`${date}T${$('ot-end').value}:00+09:00`);
+    if (end <= start) end = new Date(end.getTime() + 24 * 3600 * 1000); // 자정 넘김
+    const we = me?.branch?.work_end;
+    const ws = me?.branch?.work_start;
+    if (we && ws && start < kstAt(date, we) && end > kstAt(date, ws)) {
+      return showOtMsg(`정규 근무시간(${tmLabel(ws)} ~ ${tmLabel(we)})과 겹칩니다. 정규 퇴근시간(${tmLabel(we)}) 이후부터 신청하세요.`, 'err');
+    }
+    const btn = e.submitter; btn.disabled = true;
+    const { error } = await sb.rpc('request_overtime', {
+      p_start: start.toISOString(), p_end: end.toISOString(), p_reason: $('ot-reason').value.trim(),
+    });
+    btn.disabled = false;
+    if (error) return showOtMsg(errMsg(error), 'err');
+    showOtMsg(`초과근무를 신청했습니다 (${date} ${hm(start)}~${hm(end)}, ${fmtDur(end - start)}). 관리자 승인을 기다려 주세요.`, 'ok');
+    $('ot-reason').value = '';
+    $('ot-month').value = date.slice(0, 7);
+    loadMyOvertime();
+  });
+
+  let myOtRows = [];
+  async function loadMyOvertime() {
+    if (!me || !$('ot-month').value) return;
+    const [from, to] = monthRange($('ot-month').value);
+    const [ot, att] = await Promise.all([
+      sb.from('overtime_requests').select('*').eq('user_id', me.id)
+        .gte('work_date', from).lte('work_date', to)
+        .order('work_date', { ascending: false }).order('start_at', { ascending: false }),
+      sb.from('attendance').select('user_id, clock_in, clock_out, work_date').eq('user_id', me.id)
+        .gte('work_date', from).lte('work_date', shiftDate(to, 1)),
+    ]);
+    const tbody = $('my-ot');
+    const error = ot.error || att.error;
+    if (error) { tbody.innerHTML = `<tr><td colspan="8" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
+    myOtRows = ot.data;
+    if (!myOtRows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">신청 내역이 없습니다.</td></tr>'; return; }
+    tbody.innerHTML = myOtRows.map((q) => {
+      const rec = recognizedOtMs(q, att.data);
+      return `
+      <tr>
+        <td>${dateLabel(q.work_date)}</td>
+        <td>${otTimeLabel(q)} <span class="dist">${fmtDur(new Date(q.end_at) - new Date(q.start_at))}</span></td>
+        <td>${q.is_after ? '사후' : '사전'}</td>
+        <td class="note">${esc(q.reason)}</td>
+        <td>${otStatusTag(q.status)}</td>
+        <td>${q.status === 'approved' ? fmtDur(rec) : '-'}</td>
+        <td class="note">${esc(q.review_note || '')}</td>
+        <td>${q.status === 'pending' ? `<button class="btn small" data-ot-cancel="${q.id}">취소</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  $('my-ot').addEventListener('click', async (e) => {
+    const id = e.target.closest('[data-ot-cancel]')?.dataset.otCancel;
+    if (!id || !confirm('이 초과근무 신청을 취소하시겠습니까?')) return;
+    const { error } = await sb.rpc('cancel_overtime', { p_id: Number(id) });
+    if (error) return alert(errMsg(error));
+    loadMyOvertime();
+  });
 
   // ---------------------------------------------------------------
   //  비밀번호 변경
@@ -399,7 +559,7 @@
     const { data, error } = await sb.from('branches').select('*').order('name');
     if (error) { alert(errMsg(error)); return; }
     branches = data;
-    ['p-branch', 'd-branch', 's-branch'].forEach((id) => {
+    ['p-branch', 'd-branch', 'o-branch', 's-branch'].forEach((id) => {
       const cur = $(id).value;
       $(id).innerHTML = branchOptions({ includeAll: true });
       $(id).value = cur;
@@ -456,7 +616,7 @@
     !filter || (filter === 'none' ? branchId == null : String(branchId) === filter);
 
   // ---- 필터 (p: 개인별 근무현황, d: 일자별 근무현황 — 각각 따로 동작) ----
-  const loaders = { p: () => loadPersonal(), d: () => loadDaily() };
+  const loaders = { p: () => loadPersonal(), d: () => loadDaily(), o: () => loadOvertimeAdmin() };
 
   // 지점 필터에 맞춰 직원 select 갱신
   function fillUserSelect(prefix) {
@@ -471,6 +631,7 @@
   function fillUserSelects() {
     fillUserSelect('p');
     fillUserSelect('d');
+    fillUserSelect('o');
     $('edit-user').innerHTML = staff.filter((s) => !s.deleted_at).map((s) =>
       `<option value="${s.id}">${esc(s.name)} (${esc(branchName(s.branch_id))})</option>`).join('');
   }
@@ -483,7 +644,8 @@
     $(`${prefix}-to`).value = to;
   }
 
-  ['p', 'd'].forEach((prefix) => {
+  $('o-status').addEventListener('change', () => loadOvertimeAdmin());
+  ['p', 'd', 'o'].forEach((prefix) => {
     $(`${prefix}-branch`).addEventListener('change', () => { fillUserSelect(prefix); loaders[prefix](); });
     $(`${prefix}-user`).addEventListener('change', loaders[prefix]);
     $(`${prefix}-month`).addEventListener('change', () => {
@@ -500,6 +662,7 @@
     loadPersonal();
     loadDaily();
     loadTodaySummary();
+    loadOtBadge();
   }
 
   async function initAdmin() {
@@ -508,6 +671,8 @@
       const ym = ymd(new Date()).slice(0, 7);
       setMonth('p', ym);
       setMonth('d', ym);
+      setMonth('o', ym);
+      $('o-status').value = 'pending';
       adminReady = true;
     }
     await loadBranches();
@@ -557,7 +722,7 @@
     const to = $(`${prefix}-to`).value;
     return fetchAll(() => {
       let q = sb.from('attendance')
-        .select('*, branch:branches(name), profile:profiles!attendance_user_id_fkey(name), editor:profiles!attendance_updated_by_fkey(name)')
+        .select('*, branch:branches(name, work_start, work_end), profile:profiles!attendance_user_id_fkey(name), editor:profiles!attendance_updated_by_fkey(name)')
         .gte('work_date', from).lte('work_date', to)
         .order('work_date', { ascending: false }).order('clock_in', { ascending: true }).order('id');
       if (fb === 'none') q = q.is('branch_id', null);
@@ -567,33 +732,54 @@
     });
   }
 
+  // 기간 안의 승인된 초과근무 (자정 넘김 대비 하루 앞까지)
+  function fetchApprovedOt(prefix) {
+    const fu = $(`${prefix}-user`).value;
+    const from = $(`${prefix}-from`).value;
+    const to = $(`${prefix}-to`).value;
+    return fetchAll(() => {
+      let q = sb.from('overtime_requests').select('*').eq('status', 'approved')
+        .gte('work_date', shiftDate(from, -1)).lte('work_date', to).order('id');
+      if (fu) q = q.eq('user_id', fu);
+      return q;
+    });
+  }
+
   // ---- 개인별 근무현황 조회 ----
   let personalRows = [];
+  let personalOt = [];
   let personalSeq = 0;
   async function loadPersonal() {
     if (!$('p-from').value || !$('p-to').value) return;
     const seq = ++personalSeq;
-    $('staff-summary').innerHTML = '<tr><td colspan="7" class="empty">불러오는 중...</td></tr>';
-    const { data, error } = await fetchRecords('p');
+    $('staff-summary').innerHTML = '<tr><td colspan="9" class="empty">불러오는 중...</td></tr>';
+    const [att, ot] = await Promise.all([fetchRecords('p'), fetchApprovedOt('p')]);
     if (seq !== personalSeq) return; // 그 사이 조건이 바뀌어 새 조회가 시작됨 → 이전 결과는 버림
-    if (error) { $('staff-summary').innerHTML = `<tr><td colspan="7" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
-    personalRows = data;
+    const error = att.error || ot.error;
+    if (error) { $('staff-summary').innerHTML = `<tr><td colspan="9" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
+    personalRows = att.data;
+    personalOt = ot.data;
     renderStaffSummary();
   }
 
   // ---- 일자별 근무현황 조회 (일자별로 묶어서 표시) ----
   let dailyRows = [];
+  let dailyOt = [];
   let dailySeq = 0;
   async function loadDaily() {
     if (!$('d-from').value || !$('d-to').value) return;
     const seq = ++dailySeq;
     const tbody = $('admin-records');
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">불러오는 중...</td></tr>';
-    const { data, error } = await fetchRecords('d');
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">불러오는 중...</td></tr>';
+    const [att, ot] = await Promise.all([fetchRecords('d'), fetchApprovedOt('d')]);
     if (seq !== dailySeq) return;
-    if (error) { tbody.innerHTML = `<tr><td colspan="8" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
+    const error = att.error || ot.error;
+    if (error) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
+    const data = att.data;
     dailyRows = data;
-    if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">기록이 없습니다.</td></tr>'; $('admin-summary').textContent = ''; return; }
+    dailyOt = ot.data;
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">기록이 없습니다.</td></tr>'; $('admin-summary').textContent = ''; return; }
+    const workMs = (r) => regularMs(r) + approvedOtMsForRow(r, dailyOt);
 
     // 날짜별 그룹 (data는 날짜 내림차순, 같은 날은 출근 빠른 순)
     const groups = [];
@@ -604,25 +790,29 @@
     });
     tbody.innerHTML = groups.map((g) => {
       const open = g.rows.filter((r) => !r.clock_out).length;
-      const total = g.rows.reduce((s, r) => s + durMs(r), 0);
+      const total = g.rows.reduce((s, r) => s + workMs(r), 0);
       const head = `
-      <tr class="day-head"><td colspan="8">${dateLabel(g.date)}
+      <tr class="day-head"><td colspan="9">${dateLabel(g.date)}
         <span class="day-meta">출근 ${g.rows.length}명${open ? ` · 미퇴근 ${open}건` : ''} · 근무시간 합계 ${fmtDur(total)}</span></td></tr>`;
-      return head + g.rows.map((r) => `
+      return head + g.rows.map((r) => {
+        const extra = unapprovedMsForRow(r, dailyOt);
+        return `
       <tr>
         <td>${esc(r.branch?.name || '미지정')}</td>
         <td>${esc(r.profile?.name)}</td>
         <td>${hm(r.clock_in)}${r.in_dist_m != null ? `<span class="dist">${r.in_dist_m}m</span>` : ''}</td>
         <td>${r.clock_out ? hm(r.clock_out) + (r.out_dist_m != null ? `<span class="dist">${r.out_dist_m}m</span>` : '') : '<span class="tag-open">미퇴근</span>'}</td>
-        <td>${fmtDur(durMs(r))}</td>
+        <td>${fmtDur(regularMs(r))}</td>
+        <td>${fmtDur(approvedOtMsForRow(r, dailyOt))}${extra >= UNAPPROVED_SHOW_MS ? `<span class="tag-warn">미승인 ${fmtDur(extra)}</span>` : ''}</td>
         <td class="note">${esc(r.note)}</td>
         <td class="edited">${r.updated_at ? `${esc(r.editor?.name || '알 수 없음')} · ${ymd(r.updated_at).slice(5)} ${hm(r.updated_at)}` : ''}</td>
         <td><button class="btn small" data-edit="${r.id}">수정</button></td>
-      </tr>`).join('');
+      </tr>`;
+      }).join('');
     }).join('');
-    const total = data.reduce((s, r) => s + durMs(r), 0);
+    const total = data.reduce((s, r) => s + workMs(r), 0);
     const open = data.filter((r) => !r.clock_out).length;
-    $('admin-summary').textContent = `${groups.length}일 · ${data.length.toLocaleString()}건 · 총 근무시간 ${fmtDur(total)}${open ? ` · 미퇴근 ${open}건` : ''}`;
+    $('admin-summary').textContent = `${groups.length}일 · ${data.length.toLocaleString()}건 · 총 근무시간 ${fmtDur(total)}(정규+승인 초과)${open ? ` · 미퇴근 ${open}건` : ''}`;
   }
 
   // 개인별 근무 현황 (현재 조회 조건 기준)
@@ -632,18 +822,23 @@
     const fu = $('p-user').value;
     const map = new Map();
     // 기록이 없는 직원도 0일로 표시
+    const blank = () => ({ branches: new Set(), days: 0, reg: 0, ot: 0, total: 0, doneDays: 0, open: 0, edited: 0 });
     staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id)).forEach((s) => {
-      map.set(s.id, { name: s.name, homeBranch: s.branch_id, branches: new Set(), days: 0, total: 0, doneDays: 0, open: 0, edited: 0 });
+      map.set(s.id, { name: s.name, homeBranch: s.branch_id, ...blank() });
     });
     personalRows.forEach((r) => {
       let e = map.get(r.user_id);
       if (!e) {
-        e = { name: r.profile?.name || '(알 수 없음)', homeBranch: null, branches: new Set(), days: 0, total: 0, doneDays: 0, open: 0, edited: 0 };
+        e = { name: r.profile?.name || '(알 수 없음)', homeBranch: null, ...blank() };
         map.set(r.user_id, e);
       }
       e.branches.add(r.branch?.name || '미지정');
       e.days += 1;
-      if (r.clock_out) { e.total += durMs(r); e.doneDays += 1; } else { e.open += 1; }
+      if (r.clock_out) {
+        const reg = regularMs(r);
+        const ot = approvedOtMsForRow(r, personalOt);
+        e.reg += reg; e.ot += ot; e.total += reg + ot; e.doneDays += 1;
+      } else { e.open += 1; }
       if (r.updated_at) e.edited += 1;
     });
     return [...map.values()]
@@ -658,21 +853,26 @@
   function renderStaffSummary() {
     summaryRows = buildStaffSummary();
     const tbody = $('staff-summary');
-    if (!summaryRows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">해당 직원이 없습니다.</td></tr>'; return; }
-    const sum = summaryRows.reduce((s, e) => ({ days: s.days + e.days, total: s.total + e.total, open: s.open + e.open, edited: s.edited + e.edited }), { days: 0, total: 0, open: 0, edited: 0 });
+    if (!summaryRows.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">해당 직원이 없습니다.</td></tr>'; return; }
+    const sum = summaryRows.reduce((s, e) => ({
+      days: s.days + e.days, reg: s.reg + e.reg, ot: s.ot + e.ot, total: s.total + e.total, open: s.open + e.open, edited: s.edited + e.edited,
+    }), { days: 0, reg: 0, ot: 0, total: 0, open: 0, edited: 0 });
     tbody.innerHTML = summaryRows.map((e) => `
       <tr class="${e.days ? '' : 'zero'}">
         <td>${esc(e.branchLabel)}</td>
         <td>${esc(e.name)}</td>
         <td class="num">${e.days}일</td>
-        <td class="num">${fmtDur(e.total)}</td>
+        <td class="num">${fmtDur(e.reg)}</td>
+        <td class="num">${fmtDur(e.ot)}</td>
+        <td class="num"><b>${fmtDur(e.total)}</b></td>
         <td class="num">${fmtDur(e.avg)}</td>
         <td class="num">${e.open ? `<span class="tag-open">${e.open}건</span>` : '-'}</td>
         <td class="num">${e.edited ? `${e.edited}건` : '-'}</td>
       </tr>`).join('') + `
       <tr class="total">
         <td>합계</td><td>${summaryRows.length}명</td>
-        <td class="num">${sum.days}일</td><td class="num">${fmtDur(sum.total)}</td><td></td>
+        <td class="num">${sum.days}일</td><td class="num">${fmtDur(sum.reg)}</td><td class="num">${fmtDur(sum.ot)}</td>
+        <td class="num">${fmtDur(sum.total)}</td><td></td>
         <td class="num">${sum.open ? `${sum.open}건` : '-'}</td><td class="num">${sum.edited ? `${sum.edited}건` : '-'}</td>
       </tr>`;
   }
@@ -680,10 +880,10 @@
   $('summary-csv-btn').addEventListener('click', () => {
     if (!summaryRows.length) return alert('다운로드할 내용이 없습니다. 먼저 조회하세요.');
     const mins = (ms) => Math.floor(ms / 60000);
-    const lines = [['기간', '지점', '이름', '근무일', '총 근무시간(분)', '총 근무시간(시간)', '일평균(분)', '미퇴근', '관리자 수정']];
+    const lines = [['기간', '지점', '이름', '근무일', '정규 근무(분)', '초과근무 승인(분)', '총 근무시간(분)', '총 근무시간(시간)', '일평균(분)', '미퇴근', '관리자 수정']];
     const period = `${$('p-from').value} ~ ${$('p-to').value}`;
     summaryRows.forEach((e) => lines.push([
-      period, e.branchLabel, e.name, e.days, mins(e.total), (mins(e.total) / 60).toFixed(2),
+      period, e.branchLabel, e.name, e.days, mins(e.reg), mins(e.ot), mins(e.total), (mins(e.total) / 60).toFixed(2),
       e.doneDays ? mins(e.avg) : '', e.open, e.edited,
     ]));
     downloadCsv(`개인별근무현황_${$('p-from').value}_${$('p-to').value}.csv`, lines);
@@ -739,17 +939,143 @@
   // CSV (엑셀에서 한글 깨짐 방지를 위해 BOM 포함)
   $('csv-btn').addEventListener('click', () => {
     if (!dailyRows.length) return alert('다운로드할 기록이 없습니다. 먼저 조회하세요.');
-    const lines = [['날짜', '지점', '이름', '출근', '출근 위치(지점에서 m)', '퇴근', '퇴근 위치(지점에서 m)', '근무시간(분)', '비고', '수정자', '수정일시']];
+    const lines = [['날짜', '지점', '이름', '출근', '출근 위치(지점에서 m)', '퇴근', '퇴근 위치(지점에서 m)', '정규 근무(분)', '초과근무 승인(분)', '미승인 초과(분)', '비고', '수정자', '수정일시']];
+    const mins = (ms) => (ms ? Math.floor(ms / 60000) : '');
     dailyRows.slice().reverse().forEach((r) => {
-      const ms = durMs(r);
       lines.push([
         r.work_date, r.branch?.name || '미지정', r.profile?.name,
         hm(r.clock_in), r.in_dist_m ?? '', r.clock_out ? hm(r.clock_out) : '', r.out_dist_m ?? '',
-        ms ? Math.floor(ms / 60000) : '', r.note, r.editor?.name,
+        mins(regularMs(r)), mins(approvedOtMsForRow(r, dailyOt)), mins(unapprovedMsForRow(r, dailyOt)), r.note, r.editor?.name,
         r.updated_at ? `${ymd(r.updated_at)} ${hm(r.updated_at)}` : '',
       ]);
     });
     downloadCsv(`일자별근무현황_${$('d-from').value}_${$('d-to').value}.csv`, lines);
+  });
+
+  // ---------------------------------------------------------------
+  //  관리자: 초과근무 승인
+  // ---------------------------------------------------------------
+  // 대기 중 건수 배지
+  async function loadOtBadge() {
+    const { count, error } = await sb.from('overtime_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending');
+    const badge = $('ot-badge');
+    badge.hidden = !!error || !count;
+    badge.textContent = count ? String(count) : '';
+  }
+
+  let otRows = [];
+  let otAtt = [];
+  let otSeq = 0;
+  async function loadOvertimeAdmin() {
+    if (!$('o-from').value || !$('o-to').value) return;
+    const seq = ++otSeq;
+    const tbody = $('ot-list');
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">불러오는 중...</td></tr>';
+    const fb = $('o-branch').value;
+    const fu = $('o-user').value;
+    const st = $('o-status').value;
+    const from = $('o-from').value;
+    const to = $('o-to').value;
+    const [ot, att] = await Promise.all([
+      fetchAll(() => {
+        let q = sb.from('overtime_requests')
+          .select('*, branch:branches(name), profile:profiles!overtime_requests_user_id_fkey(name), reviewer:profiles!overtime_requests_reviewed_by_fkey(name)')
+          .gte('work_date', from).lte('work_date', to)
+          .order('work_date', { ascending: false }).order('start_at', { ascending: true }).order('id');
+        if (fb === 'none') q = q.is('branch_id', null);
+        else if (fb) q = q.eq('branch_id', fb);
+        if (fu) q = q.eq('user_id', fu);
+        if (st) q = q.eq('status', st);
+        return q;
+      }),
+      fetchAll(() => {
+        let q = sb.from('attendance').select('id, user_id, work_date, clock_in, clock_out')
+          .gte('work_date', from).lte('work_date', shiftDate(to, 1)).order('id');
+        if (fu) q = q.eq('user_id', fu);
+        return q;
+      }),
+    ]);
+    if (seq !== otSeq) return;
+    const error = ot.error || att.error;
+    if (error) { tbody.innerHTML = `<tr><td colspan="10" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
+    otRows = ot.data;
+    otAtt = att.data;
+    loadOtBadge();
+    if (!otRows.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty">신청 내역이 없습니다.</td></tr>'; $('ot-summary').textContent = ''; return; }
+
+    // 그 근무일의 실제 출퇴근 (해당 직원)
+    const actualOf = (q) => otAtt.find((a) => a.user_id === q.user_id && a.work_date === q.work_date);
+    let reqSum = 0;
+    let recSum = 0;
+    tbody.innerHTML = otRows.map((q) => {
+      const a = actualOf(q);
+      const req = new Date(q.end_at) - new Date(q.start_at);
+      const rec = recognizedOtMs(q, otAtt);
+      if (q.status === 'approved') { reqSum += req; recSum += rec; }
+      const actual = a ? `${hm(a.clock_in)}~${a.clock_out ? hm(a.clock_out) : '<span class="tag-open">미퇴근</span>'}` : '<span class="muted">기록 없음</span>';
+      const reviewed = q.reviewed_at ? `<span class="edited">${esc(q.reviewer?.name || '')} · ${ymd(q.reviewed_at).slice(5)} ${hm(q.reviewed_at)}${q.review_note ? `<br>${esc(q.review_note)}` : ''}</span>` : '';
+      return `
+      <tr data-id="${q.id}">
+        <td>${dateLabel(q.work_date)}</td>
+        <td>${esc(q.branch?.name || '미지정')}</td>
+        <td>${esc(q.profile?.name)}</td>
+        <td>${otTimeLabel(q)} <span class="dist">${fmtDur(req)}</span></td>
+        <td>${q.is_after ? '사후' : '사전'}</td>
+        <td class="note">${esc(q.reason)}</td>
+        <td>${actual}</td>
+        <td>${q.status === 'approved' ? fmtDur(rec) : (q.status === 'pending' && a?.clock_out ? `<span class="muted">승인 시 ${fmtDur(overlapMs(+new Date(q.start_at), +new Date(q.end_at), +new Date(a.clock_in), +new Date(a.clock_out)))}</span>` : '-')}</td>
+        <td>${otStatusTag(q.status)}</td>
+        <td class="actions">${q.status === 'pending'
+          ? '<button class="btn small primary" data-ot-approve>승인</button><button class="btn small danger-outline" data-ot-reject>반려</button>'
+          : reviewed}</td>
+      </tr>`;
+    }).join('');
+    const pend = otRows.filter((q) => q.status === 'pending').length;
+    $('ot-summary').textContent = `${otRows.length}건${pend ? ` · 대기 ${pend}건` : ''} · 승인 신청시간 ${fmtDur(reqSum)} · 인정 시간 ${fmtDur(recSum)}`;
+  }
+
+  $('ot-list').addEventListener('click', async (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const q = otRows.find((x) => String(x.id) === tr.dataset.id);
+    if (!q) return;
+    let approve;
+    let note;
+    if (e.target.matches('[data-ot-approve]')) {
+      note = prompt(`${q.profile?.name}님의 초과근무(${dateLabel(q.work_date)} ${otTimeLabel(q)})를 승인합니다.\n메모(선택):`, '');
+      if (note === null) return;
+      approve = true;
+    } else if (e.target.matches('[data-ot-reject]')) {
+      note = prompt(`${q.profile?.name}님의 초과근무(${dateLabel(q.work_date)} ${otTimeLabel(q)})를 반려합니다.\n반려 사유(필수):`, '');
+      if (note === null) return;
+      if (!note.trim()) return alert('반려 사유를 입력하세요.');
+      approve = false;
+    } else return;
+    tr.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    const { error } = await sb.rpc('review_overtime', { p_id: q.id, p_approve: approve, p_note: note.trim() || null });
+    if (error) { alert(errMsg(error)); tr.querySelectorAll('button').forEach((b) => { b.disabled = false; }); return; }
+    loadOvertimeAdmin();
+    loadPersonal();
+    loadDaily();
+  });
+
+  $('ot-csv-btn').addEventListener('click', () => {
+    if (!otRows.length) return alert('다운로드할 내용이 없습니다. 먼저 조회하세요.');
+    const mins = (ms) => Math.floor(ms / 60000);
+    const lines = [['근무일', '지점', '이름', '시작', '종료', '신청 시간(분)', '구분', '사유', '실제 출근', '실제 퇴근', '인정 시간(분)', '상태', '처리자', '처리일시', '메모']];
+    otRows.slice().reverse().forEach((q) => {
+      const a = otAtt.find((x) => x.user_id === q.user_id && x.work_date === q.work_date);
+      lines.push([
+        q.work_date, q.branch?.name || '미지정', q.profile?.name,
+        `${ymd(q.start_at)} ${hm(q.start_at)}`, `${ymd(q.end_at)} ${hm(q.end_at)}`,
+        mins(new Date(q.end_at) - new Date(q.start_at)), q.is_after ? '사후' : '사전', q.reason,
+        a ? hm(a.clock_in) : '', a?.clock_out ? hm(a.clock_out) : '',
+        q.status === 'approved' ? mins(recognizedOtMs(q, otAtt)) : '',
+        OT_STATUS[q.status]?.[0] || q.status, q.reviewer?.name || '',
+        q.reviewed_at ? `${ymd(q.reviewed_at)} ${hm(q.reviewed_at)}` : '', q.review_note || '',
+      ]);
+    });
+    downloadCsv(`초과근무_${$('o-from').value}_${$('o-to').value}.csv`, lines);
   });
 
   // 직원 관리
@@ -956,6 +1282,10 @@
     $('branch-list').innerHTML = branches.map((b) => `
       <tr data-id="${b.id}">
         <td><input type="text" value="${esc(b.name)}" maxlength="30" data-field="name"></td>
+        <td>
+          <input type="time" class="time-input" value="${tmLabel(b.work_start) || '09:00'}" data-field="work_start"> ~
+          <input type="time" class="time-input" value="${tmLabel(b.work_end) || '18:00'}" data-field="work_end">
+        </td>
         <td class="loc-cell">
           <div class="addr-row">
             <input type="text" class="addr-input" value="${esc(b.address || '')}" data-field="address" placeholder="도로명 주소 입력">
@@ -972,7 +1302,7 @@
           <button class="btn small" data-bmap ${hasLoc(b) ? '' : 'disabled'}>지도에서 확인</button>
           <button class="btn small" data-bdel>삭제</button>
         </td>
-      </tr>`).join('') || '<tr><td colspan="6" class="empty">등록된 지점이 없습니다. 위에서 지점을 추가하세요.</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="7" class="empty">등록된 지점이 없습니다. 위에서 지점을 추가하세요.</td></tr>';
   }
 
   $('branch-form').addEventListener('submit', async (e) => {
@@ -997,6 +1327,10 @@
       try { loc = parseCoords(tr.querySelector('[data-field="coords"]').value); } catch (err) { return alert(err.message); }
       const radius = Number(tr.querySelector('[data-field="radius_m"]').value);
       if (!Number.isInteger(radius) || radius < 30 || radius > 2000) return alert('허용 반경은 30~2000m 사이의 정수로 입력하세요.');
+      const workStart = tr.querySelector('[data-field="work_start"]').value;
+      const workEnd = tr.querySelector('[data-field="work_end"]').value;
+      if (!workStart || !workEnd) return alert('정규 출근·퇴근 시간을 입력하세요.');
+      if (workEnd <= workStart) return alert('정규 퇴근시간은 출근시간보다 늦어야 합니다.');
       const update = {
         name,
         is_active: tr.querySelector('[data-field="is_active"]').checked,
@@ -1004,6 +1338,8 @@
         lng: loc ? loc.lng : null,
         radius_m: radius,
         address: tr.querySelector('[data-field="address"]').value.trim() || null,
+        work_start: workStart,
+        work_end: workEnd,
       };
       e.target.disabled = true;
       const { error } = await sb.from('branches').update(update).eq('id', id);
@@ -1012,9 +1348,10 @@
       await loadBranches();
       renderBranches();
       if (me.branch_id === id) {
-        me.branch = { name, lat: update.lat, lng: update.lng, radius_m: radius };
+        me.branch = { name, lat: update.lat, lng: update.lng, radius_m: radius, work_start: workStart, work_end: workEnd };
         setUserLabel();
         startGps();
+        setupOvertimeForm();
       }
     } else if (e.target.matches('[data-bgeo]')) {
       // 주소 → 좌표 (OpenStreetMap 무료 검색, 키 불필요). 저장은 [저장]을 눌러야 반영
