@@ -1296,6 +1296,144 @@
   const hasLoc = (b) => b.lat != null && b.lng != null;
   const coordText = (b) => (hasLoc(b) ? `${b.lat}, ${b.lng}` : '');
 
+  // ---- 주소 → 좌표 (OpenStreetMap Nominatim, 키 불필요) ----
+  //  precise: 건물·번지까지 찾았는지. 도로·동네 위치로만 잡히면 false → 지도에서 직접 찍도록 안내
+  const PRECISE_CLASSES = ['building', 'amenity', 'office', 'shop', 'tourism', 'leisure', 'craft', 'healthcare', 'man_made'];
+  async function geocode(addr) {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=kr&limit=1&accept-language=ko&q=${encodeURIComponent(addr)}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`검색 실패 (${res.status})`);
+    const list = await res.json();
+    if (!list.length) return null;
+    const r = list[0];
+    const precise = !!r.address?.house_number || PRECISE_CLASSES.includes(r.category || r.class) ||
+      ((r.category || r.class) === 'place' && ['house', 'building'].includes(r.type));
+    return {
+      lat: Math.round(Number(r.lat) * 1e6) / 1e6,
+      lng: Math.round(Number(r.lon) * 1e6) / 1e6,
+      label: String(r.display_name || '').split(',').slice(0, 3).join(',').trim(),
+      precise,
+    };
+  }
+
+  // ---- 지도에서 위치 선택 (Leaflet + OpenStreetMap 지도, 필요할 때만 불러옴) ----
+  let leafletLoading = null;
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve();
+    if (leafletLoading) return leafletLoading;
+    leafletLoading = new Promise((resolve, reject) => {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+      document.head.appendChild(css);
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+      s.onload = () => resolve();
+      s.onerror = () => { leafletLoading = null; reject(new Error('지도를 불러오지 못했습니다. 인터넷 연결을 확인하세요.')); };
+      document.head.appendChild(s);
+    });
+    return leafletLoading;
+  }
+
+  const inKorea = (lat, lng) => lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132;
+  let pickMap = null;
+  let pickMarker = null;
+  let pickCircle = null;
+  let pickRow = null;
+  let pickPos = null;
+
+  function setPick(lat, lng, msg) {
+    const L = window.L;
+    pickPos = { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
+    const radius = Number(pickRow?.querySelector('[data-field="radius_m"]')?.value) || 100;
+    if (!pickMarker) {
+      pickMarker = L.marker([lat, lng], { draggable: true }).addTo(pickMap);
+      pickMarker.on('dragend', () => { const p = pickMarker.getLatLng(); setPick(p.lat, p.lng); });
+      pickCircle = L.circle([lat, lng], { radius, color: '#2f6fed', weight: 1, fillOpacity: 0.12 }).addTo(pickMap);
+    } else {
+      pickMarker.setLatLng([lat, lng]);
+      pickCircle.setLatLng([lat, lng]);
+      pickCircle.setRadius(radius);
+    }
+    const ok = inKorea(pickPos.lat, pickPos.lng);
+    $('map-ok').disabled = !ok;
+    $('map-info').className = ok ? 'msg ok' : 'msg err';
+    $('map-info').textContent = ok
+      ? `${msg ? `${msg} · ` : ''}선택한 위치: ${pickPos.lat}, ${pickPos.lng} · 파란 원(반경 ${radius}m) 안에서 출퇴근할 수 있습니다`
+      : '한국 범위 밖입니다. 지점 위치를 다시 선택하세요.';
+  }
+
+  async function centerOnAddress(addr) {
+    $('map-info').className = 'msg';
+    $('map-info').textContent = '주소를 찾는 중...';
+    try {
+      const g = await geocode(addr);
+      if (!g) {
+        $('map-info').className = 'msg err';
+        $('map-info').textContent = '주소를 찾지 못했습니다. 지도를 움직여 지점 건물을 직접 클릭하세요.';
+        return;
+      }
+      pickMap.setView([g.lat, g.lng], g.precise ? 18 : 16);
+      setPick(g.lat, g.lng, g.precise ? `찾음: ${g.label}` : `⚠️ 건물이 아닌 "${g.label}" 근처입니다. 실제 건물을 클릭해 핀을 옮겨 주세요`);
+    } catch (err) {
+      $('map-info').className = 'msg err';
+      $('map-info').textContent = `주소 검색을 할 수 없습니다 (${err.message}). 지도를 움직여 직접 클릭하세요.`;
+    }
+  }
+
+  async function openMapPicker(tr, firstMsg) {
+    try { await loadLeaflet(); } catch (err) { return alert(err.message); }
+    const L = window.L;
+    pickRow = tr;
+    pickPos = null;
+    $('map-title').textContent = `${tr.querySelector('[data-field="name"]').value || '지점'} 위치 선택`;
+    $('map-addr').value = tr.querySelector('[data-field="address"]').value.trim();
+    $('map-ok').disabled = true;
+    $('map-info').className = 'muted small';
+    $('map-info').textContent = '지도에서 지점 건물을 클릭하세요. 핀은 끌어서 옮길 수 있습니다.';
+    $('map-dialog').showModal();
+    if (!pickMap) {
+      pickMap = L.map('map-box');
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(pickMap);
+      pickMap.on('click', (ev) => setPick(ev.latlng.lat, ev.latlng.lng));
+    }
+    if (pickMarker) { pickMap.removeLayer(pickMarker); pickMap.removeLayer(pickCircle); pickMarker = null; pickCircle = null; }
+    setTimeout(() => pickMap.invalidateSize(), 50);
+
+    let cur = null;
+    try { cur = parseCoords(tr.querySelector('[data-field="coords"]').value); } catch (_) { cur = null; }
+    if (cur) {
+      pickMap.setView([cur.lat, cur.lng], firstMsg ? 17 : 18);
+      setPick(cur.lat, cur.lng, firstMsg || '현재 입력된 위치');
+    } else if ($('map-addr').value) {
+      pickMap.setView([36.4, 127.8], 7);
+      centerOnAddress($('map-addr').value);
+    } else {
+      pickMap.setView([36.4, 127.8], 7); // 대한민국 전체
+    }
+  }
+
+  $('map-search').addEventListener('click', () => {
+    const addr = $('map-addr').value.trim();
+    if (addr) centerOnAddress(addr);
+  });
+  $('map-addr').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); $('map-search').click(); }
+  });
+  $('map-cancel').addEventListener('click', () => $('map-dialog').close());
+  $('map-ok').addEventListener('click', () => {
+    if (!pickRow || !pickPos) return;
+    pickRow.querySelector('[data-field="coords"]').value = `${pickPos.lat}, ${pickPos.lng}`;
+    const addrInput = pickRow.querySelector('[data-field="address"]');
+    if (!addrInput.value.trim() && $('map-addr').value.trim()) addrInput.value = $('map-addr').value.trim();
+    const note = pickRow.querySelector('[data-field="note"]');
+    note.className = 'loc-note on';
+    note.textContent = '지도에서 선택함 → [저장]을 눌러야 반영됩니다';
+    $('map-dialog').close();
+  });
+
   // 지도에서 복사한 좌표 문자열 → { lat, lng } (빈 값이면 null = 위치 해제)
   //  "37.5665, 126.9780" / "37.5665° N, 126.9780° E" / 위도·경도 순서가 바뀐 경우도 처리
   function parseCoords(text) {
@@ -1332,7 +1470,7 @@
         <td><input type="checkbox" data-field="is_active" ${b.is_active ? 'checked' : ''}></td>
         <td class="actions">
           <button class="btn small" data-bsave>저장</button>
-          <button class="btn small" data-bmap ${hasLoc(b) ? '' : 'disabled'}>지도에서 확인</button>
+          <button class="btn small" data-bpick>지도에서 선택</button>
           <button class="btn small" data-bdel>삭제</button>
         </td>
       </tr>`).join('') || '<tr><td colspan="7" class="empty">등록된 지점이 없습니다. 위에서 지점을 추가하세요.</td></tr>';
@@ -1394,30 +1532,30 @@
       e.target.disabled = true;
       note.className = 'loc-note'; note.textContent = '주소를 찾는 중...';
       try {
-        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=kr&limit=1&accept-language=ko&q=${encodeURIComponent(addr)}`;
-        const res = await fetch(url, { headers: { Accept: 'application/json' } });
-        if (!res.ok) throw new Error(`검색 실패 (${res.status})`);
-        const list = await res.json();
-        if (!list.length) {
+        const g = await geocode(addr);
+        if (!g) {
           note.className = 'loc-note off';
-          note.textContent = '주소를 찾지 못했습니다. 도로명 주소로 다시 입력하거나 구글 지도 좌표를 붙여넣으세요.';
+          note.textContent = '⚠️ 주소를 찾지 못했습니다. [지도에서 선택]으로 지점 건물을 직접 찍어 주세요.';
           return;
         }
-        const lat = Math.round(Number(list[0].lat) * 1e6) / 1e6;
-        const lng = Math.round(Number(list[0].lon) * 1e6) / 1e6;
-        tr.querySelector('[data-field="coords"]').value = `${lat}, ${lng}`;
-        const place = String(list[0].display_name || '').split(',').slice(0, 3).join(',');
-        note.className = 'loc-note on';
-        note.textContent = `찾음: ${place} → [저장]을 눌러야 반영됩니다`;
+        tr.querySelector('[data-field="coords"]').value = `${g.lat}, ${g.lng}`;
+        if (g.precise) {
+          note.className = 'loc-note on';
+          note.textContent = `찾음: ${g.label} → [지도에서 선택]으로 확인 후 [저장]`;
+        } else {
+          // 건물이 아니라 도로·지역 위치로만 잡힘 → 지도에서 직접 찍도록 바로 열어 줌
+          note.className = 'loc-note off';
+          note.textContent = `⚠️ 정확한 건물을 찾지 못해 "${g.label}" 근처로 잡았습니다. 지도에서 건물을 직접 찍어 주세요.`;
+          openMapPicker(tr, `⚠️ 건물이 아닌 "${g.label}" 근처입니다. 실제 건물을 클릭해 핀을 옮겨 주세요`);
+        }
       } catch (err) {
         note.className = 'loc-note off';
-        note.textContent = `주소 검색을 할 수 없습니다 (${err.message}). 구글 지도 좌표를 붙여넣으세요.`;
+        note.textContent = `주소 검색을 할 수 없습니다 (${err.message}). [지도에서 선택]으로 직접 찍어 주세요.`;
       } finally {
         e.target.disabled = false;
       }
-    } else if (e.target.matches('[data-bmap]')) {
-      const b = branches.find((x) => x.id === id);
-      if (b && hasLoc(b)) window.open(`https://www.google.com/maps?q=${b.lat},${b.lng}`, '_blank', 'noopener');
+    } else if (e.target.matches('[data-bpick]')) {
+      openMapPicker(tr);
     } else if (e.target.matches('[data-bdel]')) {
       if (!confirm(`'${branchName(id)}' 지점을 삭제하시겠습니까?`)) return;
       const { error } = await sb.from('branches').delete().eq('id', id);

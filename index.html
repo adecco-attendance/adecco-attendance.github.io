@@ -278,7 +278,8 @@
           <b>지점 위치 등록 방법 (GPS 출퇴근)</b>
           <ol>
             <li><b>주소</b> 칸에 도로명 주소를 입력하고 <b>[주소로 찾기]</b> → 좌표가 자동으로 들어갑니다 (예: <code>서울특별시 중구 세종대로 110</code>)</li>
-            <li><b>[저장]</b> → <b>[지도에서 확인]</b>으로 핀이 지점 건물 위에 있는지 확인하세요</li>
+            <li><b>[지도에서 선택]</b>을 눌러 핀이 지점 건물 위에 있는지 확인하고, 다르면 <b>건물을 클릭</b>해 옮긴 뒤 <b>[이 위치로 설정]</b> → <b>[저장]</b></li>
+            <li>주소를 못 찾거나 건물이 아닌 도로 위치로 잡히면 경고가 뜨고 지도가 열립니다. 지도에서 건물을 직접 찍어 주세요</li>
             <li>위치가 어긋나면: 구글 지도에서 건물을 <b>마우스 오른쪽 클릭</b>(휴대폰은 길게 누르기) → 맨 위 <code>37.5665, 126.9780</code> 같은 숫자를 눌러 복사 → <b>위치</b> 칸에 붙여넣고 저장</li>
           </ol>
           위치를 등록한 지점의 직원은 지점에서 <b>허용 반경 안</b>에 있을 때만 출근·퇴근할 수 있습니다.
@@ -323,6 +324,24 @@
         <button type="submit" class="btn primary">초기화</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- (매니저) 지점 위치 지도에서 선택 -->
+  <dialog id="map-dialog" class="map-dialog">
+    <div class="dialog-body">
+      <h3 id="map-title">지점 위치 선택</h3>
+      <div class="addr-row">
+        <input type="text" id="map-addr" placeholder="주소를 입력하고 [주소로 이동]">
+        <button type="button" class="btn small" id="map-search">주소로 이동</button>
+      </div>
+      <div id="map-box"></div>
+      <p id="map-info" class="muted small"></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="map-cancel">취소</button>
+        <button type="button" class="btn primary" id="map-ok" disabled>이 위치로 설정</button>
+      </div>
+    </div>
   </dialog>
 
   <!-- 비밀번호 변경 다이얼로그 -->

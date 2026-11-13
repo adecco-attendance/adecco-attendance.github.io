@@ -147,6 +147,9 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 .loc-note { display: block; font-size: 12px; margin-top: 2px; }
 .loc-note.on { color: var(--ok); }
 .loc-note.off { color: var(--warn); }
+dialog.map-dialog { width: min(760px, calc(100vw - 32px)); }
+#map-box { height: min(420px, 55vh); border-radius: 8px; border: 1px solid var(--line); }
+#map-addr { flex: 1; }
 .help-box { margin-top: 14px; padding: 12px 14px; background: #f6f8fb; border-radius: 8px; font-size: 13px; color: var(--muted); }
 .help-box b { color: var(--text); }
 .help-box ol { margin: 6px 0; padding-left: 20px; }
