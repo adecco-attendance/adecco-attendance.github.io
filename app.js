@@ -1037,20 +1037,9 @@
       </tr>`;
   }
 
-  $('summary-csv-btn').addEventListener('click', () => {
-    if (!summaryRows.length) return alert('다운로드할 내용이 없습니다. 먼저 조회하세요.');
-    const mins = (ms) => Math.floor(ms / 60000);
-    const lines = [['기간', '지점', '이름', '근무일', '정규 근무(분)', '초과근무 승인(분)', '총 근무시간(분)', '총 근무시간(시간)', '일평균(분)', '미퇴근', '기록 수정']];
-    const period = `${$('p-from').value} ~ ${$('p-to').value}`;
-    summaryRows.forEach((e) => lines.push([
-      period, e.branchLabel, e.name, e.days, mins(e.reg), mins(e.ot), mins(e.total), Math.round(mins(e.total) / 60 * 100) / 100,
-      e.doneDays ? mins(e.avg) : '', e.open, e.edited,
-    ]));
-    downloadXlsx(`개인별근무현황_${$('p-from').value}_${$('p-to').value}.xlsx`, lines, { sheetName: '개인별 근무현황' });
-  });
-
-  // ---- 월간 근태표 엑셀: 시트1 달력형(직원별 출근/퇴근/연장), 시트2 일별 상세 ----
-  //  현재 [개인별 근무현황] 조회 조건(기간·지점·직원)을 그대로 사용
+  // ---- 근태표 엑셀: 시트1 달력형(직원별 출근/퇴근/연장), 시트2 일별 상세 ----
+  //  개인별(p)·일자별(d) 근무현황의 [엑셀 다운로드]에서 공용으로 사용
+  //  화면에서 고른 기간·지점·직원 조건으로 그때 새로 불러와서 만듦 (선택 기간의 모든 날짜가 한 파일에)
   const hmDur = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 60)}시간 ${String(m % 60).padStart(2, '0')}분`; };
   const hours1 = (ms) => Math.round(ms / 360000) / 10; // 시간 단위, 소수 1자리
   const wdOf = (d) => weekdayFmt.format(new Date(`${d}T12:00:00+09:00`));
@@ -1058,27 +1047,37 @@
   const breakMs = (regMs) => (regMs >= 8 * 3600000 ? 3600000 : regMs >= 4 * 3600000 ? 1800000 : 0);
   const workRegMs = (r) => { const reg = regularMs(r); return reg - breakMs(reg); }; // 소정근로 = 정규 근무 − 휴게
 
-  $('month-xlsx-btn').addEventListener('click', async () => {
-    const from = $('p-from').value;
-    const to = $('p-to').value;
-    if (!from || !to || from > to) return alert('기간을 선택하고 [조회]를 누르세요.');
+  async function exportAttendance(prefix, btn) {
+    const from = $(`${prefix}-from`).value;
+    const to = $(`${prefix}-to`).value;
+    if (!from || !to || from > to) return alert('시작일과 종료일을 선택하세요.');
     const dates = [];
-    for (let d = from; d <= to; d = shiftDate(d, 1)) { dates.push(d); if (dates.length > 62) return alert('근태표는 한 번에 62일까지 만들 수 있습니다. 기간을 줄여 주세요.'); }
-    try { await loadXlsx(); } catch (e) { alert(e.message); return; }
+    for (let d = from; d <= to; d = shiftDate(d, 1)) { dates.push(d); if (dates.length > 62) return alert('엑셀은 한 번에 62일까지 만들 수 있습니다. 기간을 줄여 주세요.'); }
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = '만드는 중...';
+    let att; let otRes;
+    try {
+      await loadXlsx();
+      [att, otRes] = await Promise.all([fetchRecords(prefix), fetchApprovedOt(prefix)]);
+    } catch (e) { alert(e.message); return; }
+    finally { btn.disabled = false; btn.textContent = label; }
+    if (att.error || otRes.error) return alert(errMsg(att.error || otRes.error));
+    const rows = att.data;
+    const otReqs = otRes.data;
     const X = window.XLSX;
-    const fb = $('p-branch').value;
-    const fu = $('p-user').value;
+    const fb = $(`${prefix}-branch`).value;
+    const fu = $(`${prefix}-user`).value;
 
     // 대상 직원: 조건에 맞는 재직자 + 기간 중 기록이 있는 사람 (지점 → 이름 순)
     const people = new Map();
     staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id)).forEach((s) => people.set(s.id, s));
-    personalRows.forEach((r) => {
+    rows.forEach((r) => {
       if (!people.has(r.user_id)) people.set(r.user_id, staff.find((s) => s.id === r.user_id) || { id: r.user_id, name: r.profile?.name || '(알 수 없음)', branch_id: r.branch_id });
     });
     const list = [...people.values()].sort((a, b) => branchName(a.branch_id).localeCompare(branchName(b.branch_id), 'ko') || a.name.localeCompare(b.name, 'ko'));
     if (!list.length) return alert('해당 직원이 없습니다. 조건을 확인하고 [조회]를 누르세요.');
-    const rec = new Map(personalRows.map((r) => [`${r.user_id}|${r.work_date}`, r]));
-    const otOf = (r) => (r && r.clock_out ? approvedOtMsForRow(r, personalOt) : 0);
+    const rec = new Map(rows.map((r) => [`${r.user_id}|${r.work_date}`, r]));
+    const otOf = (r) => (r && r.clock_out ? approvedOtMsForRow(r, otReqs) : 0);
 
     // ===== 시트1: 달력형 =====
     const FIX = ['순번', '성명', '지점명', '입사일', '구분'];
@@ -1160,7 +1159,7 @@
         const brk = breakMs(regularMs(r));
         const reg = workRegMs(r);
         const ot = otOf(r);
-        const extra = r.clock_out ? unapprovedMsForRow(r, personalOt) : 0;
+        const extra = r.clock_out ? unapprovedMsForRow(r, otReqs) : 0;
         detail.push([p.name, r.branch?.name || branchName(r.branch_id), d, wdOf(d), tmLabel(b?.work_start), tmLabel(b?.work_end),
           hm(r.clock_in), r.clock_out ? hm(r.clock_out) : '미퇴근',
           r.clock_out ? hmDur(brk) : '', r.clock_out ? hmDur(reg) : '', r.clock_out ? hmDur(ot) : '', r.clock_out ? hmDur(reg + ot) : '',
@@ -1172,8 +1171,10 @@
     const wb = X.utils.book_new();
     X.utils.book_append_sheet(wb, ws, '근태표');
     X.utils.book_append_sheet(wb, ws2, '일별 상세');
-    X.writeFile(wb, `근태현황_${from}_${to}_${branchTitle}.xlsx`, { compression: true });
-  });
+    const who = fu ? `_${list.find((p) => p.id === fu)?.name || ''}` : '';
+    X.writeFile(wb, `근태현황_${from}_${to}_${branchTitle}${who}.xlsx`, { compression: true });
+  }
+  $('summary-csv-btn').addEventListener('click', (e) => exportAttendance('p', e.currentTarget));
 
   $('admin-records').addEventListener('click', (e) => {
     const id = e.target.closest('[data-edit]')?.dataset.edit;
@@ -1222,21 +1223,8 @@
     reloadRecords();
   });
 
-  // 일자별 근무현황 엑셀
-  $('csv-btn').addEventListener('click', () => {
-    if (!dailyRows.length) return alert('다운로드할 기록이 없습니다. 먼저 조회하세요.');
-    const lines = [['날짜', '지점', '이름', '출근', '출근 위치(지점에서 m)', '퇴근', '퇴근 위치(지점에서 m)', '정규 근무(분)', '초과근무 승인(분)', '미승인 초과(분)', '비고', '수정자', '수정일시']];
-    const mins = (ms) => (ms ? Math.floor(ms / 60000) : '');
-    dailyRows.slice().reverse().forEach((r) => {
-      lines.push([
-        r.work_date, r.branch?.name || '미지정', r.profile?.name,
-        hm(r.clock_in), r.in_dist_m ?? '', r.clock_out ? hm(r.clock_out) : '', r.out_dist_m ?? '',
-        mins(regularMs(r)), mins(approvedOtMsForRow(r, dailyOt)), mins(unapprovedMsForRow(r, dailyOt)), r.note, r.editor?.name,
-        r.updated_at ? `${ymd(r.updated_at)} ${hm(r.updated_at)}` : '',
-      ]);
-    });
-    downloadXlsx(`일자별근무현황_${$('d-from').value}_${$('d-to').value}.xlsx`, lines, { sheetName: '일자별 근무현황' });
-  });
+  // 일자별 근무현황 엑셀 (개인별과 같은 근태표 형식, 일자별 화면의 기간·지점·직원 조건)
+  $('csv-btn').addEventListener('click', (e) => exportAttendance('d', e.currentTarget));
 
   // ---------------------------------------------------------------
   //  관리자: 초과근무 승인
