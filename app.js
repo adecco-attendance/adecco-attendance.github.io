@@ -181,6 +181,22 @@
     return [`${ym}-01`, `${ym}-${String(last).padStart(2, '0')}`];
   }
 
+  // 휴대폰에서 넓은 표를 카드 모양으로 보여 주기 위해, 각 칸에 제목(data-label)을 붙임 (표 내용이 바뀔 때마다 자동)
+  function labelTable(table) {
+    const heads = [...(table.tHead?.rows[0]?.cells || [])].map((c) => c.textContent.trim());
+    [...table.tBodies[0].rows].forEach((tr) => {
+      let i = 0;
+      [...tr.cells].forEach((td) => {
+        const label = td.colSpan > 1 ? '' : (heads[i] || '');
+        if (td.dataset.label !== label) td.dataset.label = label;
+        i += td.colSpan;
+      });
+    });
+  }
+  document.querySelectorAll('table.stack').forEach((t) => {
+    new MutationObserver(() => labelTable(t)).observe(t.tBodies[0], { childList: true });
+  });
+
   document.querySelectorAll('.company-name, #company-name').forEach((el) => { el.textContent = CFG.COMPANY_NAME || ''; });
   document.querySelectorAll('.email-domain').forEach((el) => { el.textContent = CFG.EMAIL_DOMAIN || 'mycompany.com'; });
 

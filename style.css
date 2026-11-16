@@ -216,6 +216,36 @@ dialog::backdrop { background: rgba(15, 20, 35, .45); }
 .spinner { width: 32px; height: 32px; border: 3px solid var(--line); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* 휴대폰: 넓은 관리 표를 카드 모양으로 (칸 제목 : 값), 옆으로 밀지 않아도 되게 */
+@media (max-width: 600px) {
+  .table-wrap:has(> table.stack) { overflow-x: visible; }
+  table.stack, table.stack tbody { display: block; width: 100%; }
+  table.stack thead { display: none; }
+  table.stack tr { display: block; border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; margin-bottom: 10px; background: #fff; }
+  table.stack td { display: block; border: 0; padding: 5px 0; white-space: normal; text-align: right; min-width: 0; word-break: keep-all; overflow: hidden; }
+  table.stack td::before { content: attr(data-label); float: left; margin-right: 12px; color: var(--muted); font-size: 13px; line-height: 1.9; text-align: left; }
+  table.stack td:has(> input:not([type="checkbox"]), > select)::before { line-height: 40px; }
+  table.stack td[data-label=""]::before { content: none; }
+  table.stack td:has(> .s-check)::before { content: "선택"; }
+  table.stack td:empty { display: none; }
+  table.stack td > input:not([type="checkbox"]), table.stack td > select { width: 62%; }
+  table.stack td.actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
+  table.stack td.actions::before { margin-right: auto; }
+  table.stack td.note, table.stack td.loc-cell, table.stack td.absent { min-width: 0; }
+  table.stack td.loc-cell { display: block; text-align: left; overflow: visible; }
+  table.stack td.loc-cell::before { display: block; float: none; margin-bottom: 4px; line-height: 1.5; }
+  table.stack td.loc-cell .addr-row { flex-wrap: nowrap; }
+  table.stack td.loc-cell .addr-input { min-width: 0; flex: 1 1 auto; width: auto; }
+  table.stack td.loc-cell .coord-input { width: 100%; }
+  table.stack td > input.radius-input:not([type="checkbox"]) { width: 90px; }  table.stack td.empty { display: block; text-align: center; }
+  table.stack tr.day-head { background: #f1f5fd; border-color: #d6e0f5; }
+  table.stack tr.day-head td { display: block; text-align: left; background: transparent; border: 0; }
+  table.stack tr.total { background: #f6f8fb; }
+  table.stack tr.total td { border-top: 0; }
+  table.stack tr.inactive td { background: transparent; }
+  table.stack tr.inactive { background: #fafafa; }
+}
+
 @media (max-width: 600px) {
   .topbar { gap: 8px; }
   .user-menu { width: 100%; margin-left: 0; justify-content: flex-end; }

@@ -172,7 +172,7 @@
           <button type="submit" class="btn primary">조회</button>
         </form>
         <div class="table-wrap">
-          <table>
+          <table class="stack">
             <thead><tr><th>지점</th><th>이름</th><th>근무일</th><th>정규 근무</th><th>초과근무(승인)</th><th>총 근무시간</th><th>일평균</th><th>미퇴근</th><th>기록 수정</th></tr></thead>
             <tbody id="staff-summary"></tbody>
           </table>
@@ -203,7 +203,7 @@
           <button type="button" class="btn" id="add-record-btn">기록 추가</button>
         </form>
         <div class="table-wrap">
-          <table>
+          <table class="stack">
             <thead><tr><th>지점</th><th>이름</th><th>출근</th><th>퇴근</th><th>정규 근무</th><th>초과근무(승인)</th><th>비고</th><th>수정이력</th><th></th></tr></thead>
             <tbody id="admin-records"></tbody>
           </table>
@@ -242,7 +242,7 @@
           <button type="submit" class="btn primary">조회</button>
         </form>
         <div class="table-wrap">
-          <table>
+          <table class="stack">
             <thead><tr><th>근무일</th><th>지점</th><th>이름</th><th>신청 시간</th><th>구분</th><th>사유</th><th>실제 출퇴근</th><th>인정 시간</th><th>상태</th><th>처리</th></tr></thead>
             <tbody id="ot-list"></tbody>
           </table>
@@ -320,7 +320,7 @@
           <button type="button" class="btn danger-outline" id="s-logout-all">전체 로그아웃</button>
         </div>
         <div class="table-wrap">
-          <table>
+          <table class="stack">
             <thead><tr><th><input type="checkbox" id="s-check-all" title="보이는 직원 모두 선택"></th><th>이름</th><th>소속 지점</th><th>입사일</th><th>아이디</th><th>상태</th><th>접속</th><th>최근 로그인</th><th>권한</th><th>관리</th></tr></thead>
             <tbody id="staff-list"></tbody>
           </table>
@@ -341,7 +341,7 @@
           <label class="grow">이름 검색 <input type="search" id="r-search" placeholder="예) 홍길동"></label>
         </div>
         <div class="table-wrap">
-          <table>
+          <table class="stack">
             <thead><tr><th>이름</th><th>마지막 소속</th><th>아이디</th><th>퇴사 처리일</th><th>근무 기간</th><th>출퇴근 기록</th><th>초과근무</th><th>보존 기한</th><th>관리</th></tr></thead>
             <tbody id="retired-list"></tbody>
           </table>
@@ -363,7 +363,7 @@
           <button type="submit" class="btn primary">지점 추가</button>
         </form>
         <div class="table-wrap">
-          <table>
+          <table class="stack">
             <thead><tr><th>지점명</th><th>정규 근무시간</th><th>주소 / 위치 (위도, 경도)</th><th>허용 반경</th><th>소속 직원</th><th>사용</th><th>관리</th></tr></thead>
             <tbody id="branch-list"></tbody>
           </table>
