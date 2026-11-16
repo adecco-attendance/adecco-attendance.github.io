@@ -136,6 +136,12 @@
   //  textCols: 항상 텍스트로 둘 칸 번호 (0으로 시작하는 사번·비밀번호가 숫자로 바뀌지 않게)
   //  blankRows: 빈 입력 줄 수 (양식용, textCols 칸을 미리 텍스트 서식으로)
   //  sheets: 추가 시트 [{ name, lines }]
+  // 엑셀 칸 서식
+  const XB = { style: 'thin', color: { rgb: 'A6A6A6' } };
+  const XS = {
+    border: { top: XB, bottom: XB, left: XB, right: XB },
+    get head() { return { font: { bold: true, sz: 10 }, fill: { fgColor: { rgb: 'DDE6F4' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: this.border }; },
+  };
   function makeSheet(X, lines, { textCols = [], blankRows = 0, filter = true } = {}) {
     const ws = X.utils.aoa_to_sheet(lines.map((l) => l.map((v) => (v == null ? '' : v))));
     const strW = (v) => [...String(v ?? '')].reduce((w, ch) => w + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
@@ -151,6 +157,11 @@
       }
     });
     if (blankRows) ws['!ref'] = X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: nCols - 1 } });
+    // 제목 줄: 굵게 + 배경색 + 테두리
+    for (let c = 0; c < nCols; c++) {
+      const cell = ws[X.utils.encode_cell({ r: 0, c })];
+      if (cell) cell.s = XS.head;
+    }
     if (filter && lines.length > 1) ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lines.length - 1, c: nCols - 1 } }) };
     return ws;
   }
@@ -1038,6 +1049,132 @@
     downloadXlsx(`개인별근무현황_${$('p-from').value}_${$('p-to').value}.xlsx`, lines, { sheetName: '개인별 근무현황' });
   });
 
+  // ---- 월간 근태표 엑셀: 시트1 달력형(직원별 출근/퇴근/연장), 시트2 일별 상세 ----
+  //  현재 [개인별 근무현황] 조회 조건(기간·지점·직원)을 그대로 사용
+  const hmDur = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 60)}시간 ${String(m % 60).padStart(2, '0')}분`; };
+  const hours1 = (ms) => Math.round(ms / 360000) / 10; // 시간 단위, 소수 1자리
+  const wdOf = (d) => weekdayFmt.format(new Date(`${d}T12:00:00+09:00`));
+  // 휴게시간 (근로기준법 제54조 기준): 정규시간 안 근무가 8시간 이상 → 1시간, 4시간 이상 → 30분
+  const breakMs = (regMs) => (regMs >= 8 * 3600000 ? 3600000 : regMs >= 4 * 3600000 ? 1800000 : 0);
+  const workRegMs = (r) => { const reg = regularMs(r); return reg - breakMs(reg); }; // 소정근로 = 정규 근무 − 휴게
+
+  $('month-xlsx-btn').addEventListener('click', async () => {
+    const from = $('p-from').value;
+    const to = $('p-to').value;
+    if (!from || !to || from > to) return alert('기간을 선택하고 [조회]를 누르세요.');
+    const dates = [];
+    for (let d = from; d <= to; d = shiftDate(d, 1)) { dates.push(d); if (dates.length > 62) return alert('근태표는 한 번에 62일까지 만들 수 있습니다. 기간을 줄여 주세요.'); }
+    try { await loadXlsx(); } catch (e) { alert(e.message); return; }
+    const X = window.XLSX;
+    const fb = $('p-branch').value;
+    const fu = $('p-user').value;
+
+    // 대상 직원: 조건에 맞는 재직자 + 기간 중 기록이 있는 사람 (지점 → 이름 순)
+    const people = new Map();
+    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id)).forEach((s) => people.set(s.id, s));
+    personalRows.forEach((r) => {
+      if (!people.has(r.user_id)) people.set(r.user_id, staff.find((s) => s.id === r.user_id) || { id: r.user_id, name: r.profile?.name || '(알 수 없음)', branch_id: r.branch_id });
+    });
+    const list = [...people.values()].sort((a, b) => branchName(a.branch_id).localeCompare(branchName(b.branch_id), 'ko') || a.name.localeCompare(b.name, 'ko'));
+    if (!list.length) return alert('해당 직원이 없습니다. 조건을 확인하고 [조회]를 누르세요.');
+    const rec = new Map(personalRows.map((r) => [`${r.user_id}|${r.work_date}`, r]));
+    const otOf = (r) => (r && r.clock_out ? approvedOtMsForRow(r, personalOt) : 0);
+
+    // ===== 시트1: 달력형 =====
+    const FIX = ['순번', '성명', '지점명', '입사일', '구분'];
+    const SUM = ['근무일', '소정근로(시간)', '연장(시간)', '총(시간)'];
+    const nF = FIX.length;
+    const nD = dates.length;
+    const nC = nF + nD + SUM.length;
+    const branchTitle = fb === '' ? '전체 지점' : fb === 'none' ? '지점 미지정' : branchName(Number(fb));
+    const aoa = [];
+    aoa.push([`${from} ~ ${to} 근태 현황 (${branchTitle})`]);
+    aoa.push([...FIX, ...dates.map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`), ...SUM]);
+    aoa.push([...FIX.map(() => ''), ...dates.map(wdOf), ...SUM.map(() => '')]);
+    list.forEach((p, i) => {
+      const rows = dates.map((d) => rec.get(`${p.id}|${d}`));
+      const done = rows.filter((r) => r && r.clock_out);
+      const reg = done.reduce((t, r) => t + workRegMs(r), 0);
+      const ot = done.reduce((t, r) => t + otOf(r), 0);
+      const sums = [rows.filter(Boolean).length, hours1(reg), hours1(ot), hours1(reg + ot)];
+      aoa.push([i + 1, p.name, branchName(p.branch_id), p.hire_date || '', '출근', ...rows.map((r) => (r ? hm(r.clock_in) : '')), ...sums]);
+      aoa.push(['', '', '', '', '퇴근', ...rows.map((r) => (!r ? '' : r.clock_out ? hm(r.clock_out) : '미퇴근')), '', '', '', '']);
+      aoa.push(['', '', '', '', '연장', ...rows.map((r) => (r && r.clock_out ? hours1(otOf(r)) : '')), '', '', '', '']);
+    });
+    const ws = X.utils.aoa_to_sheet(aoa);
+
+    // 병합: 제목, 고정 칸·합계 칸 머리(2줄), 직원별 고정 칸·합계(3줄)
+    const M = (r1, c1, r2, c2) => ({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
+    const merges = [M(0, 0, 0, nC - 1)];
+    for (let c = 0; c < nF; c++) merges.push(M(1, c, 2, c));
+    for (let c = nF + nD; c < nC; c++) merges.push(M(1, c, 2, c));
+    list.forEach((_, i) => {
+      const r = 3 + i * 3;
+      for (let c = 0; c < 4; c++) merges.push(M(r, c, r + 2, c));
+      for (let c = nF + nD; c < nC; c++) merges.push(M(r, c, r + 2, c));
+    });
+    ws['!merges'] = merges;
+
+    // 서식
+    const thin = { style: 'thin', color: { rgb: 'A6A6A6' } };
+    const thick = { style: 'medium', color: { rgb: '404040' } };
+    const lastRow = aoa.length - 1;
+    for (let r = 1; r <= lastRow; r++) {
+      for (let c = 0; c < nC; c++) {
+        const ref = X.utils.encode_cell({ r, c });
+        const cell = ws[ref] || (ws[ref] = { t: 's', v: '' });
+        const d = c >= nF && c < nF + nD ? dates[c - nF] : null;
+        const wd = d ? wdOf(d) : '';
+        const head = r <= 2;
+        const personEnd = !head && (r - 3) % 3 === 2;
+        const s = {
+          font: { sz: 9, bold: head || c === 1 },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: {
+            top: (r - 3) % 3 === 0 && !head ? thick : thin,
+            bottom: personEnd || r === 2 ? thick : thin,
+            left: wd === '월' ? thick : thin,
+            right: thin,
+          },
+        };
+        if (head) s.fill = { fgColor: { rgb: 'DDE6F4' } };
+        if ((wd === '토' || wd === '일') && r === 2) s.font.color = { rgb: 'D00000' };
+        if ((wd === '토' || wd === '일') && !head) s.fill = { fgColor: { rgb: 'F7F7F7' } };
+        if (cell.v === '미퇴근') s.font.color = { rgb: 'D00000' };
+        if (!head && (r - 3) % 3 === 2 && cell.t === 'n') cell.z = '0.0';
+        if (c >= nF + nD && !head && cell.t === 'n' && c > nF + nD) cell.z = '0.0';
+        cell.s = s;
+      }
+    }
+    ws.A1.s = { font: { bold: true, sz: 14 }, alignment: { horizontal: 'left', vertical: 'center' } };
+    ws['!cols'] = [{ wch: 5 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, { wch: 5 }, ...dates.map(() => ({ wch: 6 })), { wch: 7 }, { wch: 9 }, { wch: 9 }, { wch: 9 }];
+    ws['!rows'] = [{ hpt: 26 }];
+
+    // ===== 시트2: 일별 상세 (직원 × 날짜, 기록 없는 날은 빈칸) =====
+    const detail = [['이름', '지점', '날짜', '요일', '정규 시작', '정규 종료', '출근', '퇴근', '휴게시간', '소정근로시간', '연장근로시간(승인)', '총 근무시간', '미승인 초과', '비고']];
+    list.forEach((p) => {
+      dates.forEach((d) => {
+        const r = rec.get(`${p.id}|${d}`);
+        if (!r) { detail.push([p.name, branchName(p.branch_id), d, wdOf(d), '', '', '', '', '', '', '', '', '', '']); return; }
+        const b = r.branch || branches.find((x) => x.id === r.branch_id);
+        const brk = breakMs(regularMs(r));
+        const reg = workRegMs(r);
+        const ot = otOf(r);
+        const extra = r.clock_out ? unapprovedMsForRow(r, personalOt) : 0;
+        detail.push([p.name, r.branch?.name || branchName(r.branch_id), d, wdOf(d), tmLabel(b?.work_start), tmLabel(b?.work_end),
+          hm(r.clock_in), r.clock_out ? hm(r.clock_out) : '미퇴근',
+          r.clock_out ? hmDur(brk) : '', r.clock_out ? hmDur(reg) : '', r.clock_out ? hmDur(ot) : '', r.clock_out ? hmDur(reg + ot) : '',
+          extra >= UNAPPROVED_SHOW_MS ? hmDur(extra) : '', r.note || '']);
+      });
+    });
+    const ws2 = makeSheet(X, detail, {});
+
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, ws, '근태표');
+    X.utils.book_append_sheet(wb, ws2, '일별 상세');
+    X.writeFile(wb, `근태현황_${from}_${to}_${branchTitle}.xlsx`, { compression: true });
+  });
+
   $('admin-records').addEventListener('click', (e) => {
     const id = e.target.closest('[data-edit]')?.dataset.edit;
     if (id) openEdit(dailyRows.find((r) => String(r.id) === id));
@@ -1253,6 +1390,7 @@
       <tr data-id="${s.id}" class="${active ? '' : 'inactive'}">
         <td><input type="text" value="${esc(s.name)}" maxlength="30" data-field="name"></td>
         <td><select data-field="branch_id">${branchOptions({ current: s.branch_id, onlyActive: true })}</select></td>
+        <td><input type="date" value="${esc(s.hire_date || '')}" data-field="hire_date" class="hire-input"></td>
         <td>${esc(loginIdOf(s.email))}</td>
         <td>${statusKnown ? (active ? '<span class="status-on">사용 중</span>' : '<span class="status-off">비활성</span>') : '-'}</td>
         <td class="edited">${last}</td>
@@ -1264,7 +1402,7 @@
           ${!self && statusKnown && !active ? '<button class="btn small danger-outline" data-delete>삭제</button>' : ''}
         </td>
       </tr>`;
-    }).join('') || '<tr><td colspan="7" class="empty">직원이 없습니다.</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="empty">직원이 없습니다.</td></tr>';
   }
 
   // 아이디는 항상 소문자로 저장되므로 입력하는 즉시 소문자로 바꿔서 보여줌
@@ -1300,6 +1438,7 @@
         name,
         password: $('na-pw').value,
         branch_id: $('na-branch').value || null,
+        hire_date: $('na-hire').value || null,
         ...flags,
       });
       msg.textContent = `${name}(${loginId}) 직원을 추가했습니다. 아이디와 초기 비밀번호를 직원에게 전달하세요.`;
@@ -1319,7 +1458,22 @@
   // ---------------------------------------------------------------
   //  직원 일괄 등록 (엑셀/CSV 명단 → 검사 → 50명씩 나눠 등록 → 결과 파일)
   // ---------------------------------------------------------------
-  const BULK_HEAD = ['이름', '아이디', '지점', '권한', '초기 비밀번호'];
+  const BULK_HEAD = ['이름', '아이디', '지점', '입사일', '권한', '초기 비밀번호'];
+  // 입사일: 2024-01-02 / 2024.1.2 / 2024/1/2 / 24-1-2 / 1/2/24(엑셀 날짜) → 'YYYY-MM-DD', 비어 있으면 '', 틀리면 null
+  function parseHireDate(v) {
+    const s = String(v ?? '').trim();
+    if (!s) return '';
+    let y; let m; let d;
+    let k = s.match(/^(\d{2,4})[-./년\s]+(\d{1,2})[-./월\s]+(\d{1,2})일?$/);
+    if (k) [, y, m, d] = k;
+    else if ((k = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/))) [, m, d, y] = k;
+    else if ((k = s.match(/^(\d{4})(\d{2})(\d{2})$/))) [, y, m, d] = k;
+    else return null;
+    y = Number(y); if (y < 100) y += 2000;
+    const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const t = new Date(`${iso}T12:00:00Z`);
+    return !Number.isNaN(+t) && t.toISOString().slice(0, 10) === iso && y >= 1950 && y <= 2100 ? iso : null;
+  }
   const BULK_MAX = 2000;
   let bulkRows = [];      // { line, name, id, branchName, branchId, roleText, role, pw, pwAuto, errors[], status, msg }
   let bulkDone = false;
@@ -1330,7 +1484,8 @@
     if (xlsxLoading) return xlsxLoading;
     xlsxLoading = new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      // xlsx-js-style: SheetJS에 칸 서식(테두리·색·글꼴)을 더한 판 (읽기·쓰기 모두 SheetJS와 같음)
+      s.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
       s.onload = () => resolve();
       s.onerror = () => { xlsxLoading = null; reject(new Error('엑셀 읽기 도구를 불러오지 못했습니다. 인터넷 연결을 확인하세요.')); };
       document.head.appendChild(s);
@@ -1359,6 +1514,7 @@
       ['이름', '필수', '30자 이내', '홍길동'],
       ['아이디', '필수', `영문 소문자·숫자·. _ - 로 2~30자. 로그인할 때 이 아이디만 입력합니다. (@${CFG.EMAIL_DOMAIN || ''})`, 'hong / 00123'],
       ['지점', '선택', '아래 [사용 중인 지점] 이름을 그대로 적습니다. 비우면 지점 미지정', branches.find((b) => b.is_active)?.name || '본사'],
+      ['입사일', '선택', '2024-01-02 형식 (2024.1.2, 24-1-2도 가능). 근태표 엑셀에 표시됩니다', '2024-01-02'],
       ['권한', '선택', '일반 사용자 / 슈퍼바이저 / 매니저 중 하나. 비우면 일반 사용자. 슈퍼바이저는 지점 필수', '일반 사용자'],
       ['초기 비밀번호', '선택', '8자 이상. 비우면 10자리 무작위로 자동 생성', ''],
       [],
@@ -1367,7 +1523,7 @@
     ];
     // 아이디·비밀번호 칸은 텍스트 서식 (00123 같은 사번이 123으로 바뀌지 않게)
     downloadXlsx('직원_일괄등록_양식.xlsx', [BULK_HEAD], {
-      sheetName: '직원 명단', textCols: [1, 4], blankRows: BULK_MAX, filter: false,
+      sheetName: '직원 명단', textCols: [1, 3, 5], blankRows: BULK_MAX, filter: false,
       sheets: [{ name: '작성 안내', lines: guide }],
     });
   });
@@ -1395,12 +1551,12 @@
     if (hi < 0) throw new Error('첫 줄에 "이름", "아이디" 칸 제목이 있는 양식을 사용하세요. ([양식 내려받기])');
     const head = table[hi].map(norm);
     const col = (...names) => head.findIndex((h) => names.includes(h));
-    const c = { name: col('이름'), id: col('아이디'), branch: col('지점', '소속 지점', '소속지점'), role: col('권한'), pw: col('초기 비밀번호', '초기비밀번호', '비밀번호') };
+    const c = { name: col('이름'), id: col('아이디'), branch: col('지점', '소속 지점', '소속지점', '지점명'), hire: col('입사일'), role: col('권한'), pw: col('초기 비밀번호', '초기비밀번호', '비밀번호') };
     const rows = [];
     table.slice(hi + 1).forEach((r, k) => {
       const get = (i) => (i < 0 ? '' : norm(r[i]));
-      if (![c.name, c.id, c.branch, c.role, c.pw].some((i) => get(i))) return; // 빈 줄
-      rows.push({ line: hi + k + 2, name: get(c.name), id: get(c.id).toLowerCase(), branchName: get(c.branch), roleText: get(c.role), pw: c.pw < 0 ? '' : String(r[c.pw] ?? '').trim() });
+      if (![c.name, c.id, c.branch, c.hire, c.role, c.pw].some((i) => get(i))) return; // 빈 줄
+      rows.push({ line: hi + k + 2, name: get(c.name), id: get(c.id).toLowerCase(), branchName: get(c.branch), hireText: get(c.hire), roleText: get(c.role), pw: c.pw < 0 ? '' : String(r[c.pw] ?? '').trim() });
     });
     if (!rows.length) throw new Error('명단이 비어 있습니다.');
     if (rows.length > BULK_MAX) throw new Error(`한 번에 ${BULK_MAX}명까지 등록할 수 있습니다. 파일을 나눠서 올려 주세요. (현재 ${rows.length}명)`);
@@ -1427,6 +1583,8 @@
         else if (!b.is_active) e.push(`사용 중지된 지점 "${r.branchName}"`);
         else r.branchId = b.id;
       }
+      r.hire = parseHireDate(r.hireText);
+      if (r.hire === null) e.push(`입사일 "${r.hireText}" 형식 오류 (예: 2024-01-02)`);
       r.role = ROLE_WORDS[r.roleText.replace(/\s+/g, ' ')] || ROLE_WORDS[r.roleText.toLowerCase()];
       if (!r.role) e.push(`권한 "${r.roleText}"을(를) 알 수 없음`);
       else if (r.role === 'supervisor' && !r.branchId) e.push('슈퍼바이저는 지점 필수');
@@ -1464,7 +1622,7 @@
       const res = r.status === 'invalid' ? `<span class="bulk-bad">${esc(r.msg)}</span>`
         : r.status === 'fail' ? `<span class="bulk-bad">등록 실패: ${esc(r.msg)}</span>`
           : r.status === 'done' ? '<span class="bulk-good">등록됨</span>' : '<span class="muted">등록 가능</span>';
-      return `<tr class="${cls}"><td class="num">${r.line}</td><td>${esc(r.name)}</td><td>${esc(r.id)}</td><td>${esc(r.branchName || '(미지정)')}</td>
+      return `<tr class="${cls}"><td class="num">${r.line}</td><td>${esc(r.name)}</td><td>${esc(r.id)}</td><td>${esc(r.branchName || '(미지정)')}</td><td>${esc(r.hire || r.hireText || '')}</td>
         <td>${r.role ? roleLabel(r.role) : esc(r.roleText)}</td><td>${r.pwAuto ? '<span class="muted">자동 생성</span>' : '직접 지정'}</td><td>${res}</td></tr>`;
     }).join('');
   }
@@ -1513,7 +1671,7 @@
             const d = await staffApi({
               action: 'bulk_create',
               domain: CFG.EMAIL_DOMAIN,
-              rows: part.map((r) => ({ login_id: r.id, name: r.name, password: r.pw, branch_id: r.branchId, ...roleFlags(r.role) })),
+              rows: part.map((r) => ({ login_id: r.id, name: r.name, password: r.pw, branch_id: r.branchId, hire_date: r.hire || null, ...roleFlags(r.role) })),
             });
             results = d.results;
           } catch (err) {
@@ -1538,13 +1696,13 @@
   });
 
   $('bulk-result').addEventListener('click', () => {
-    const lines = [['이름', '아이디', '지점', '권한', '초기 비밀번호', '결과']];
+    const lines = [['이름', '아이디', '지점', '입사일', '권한', '초기 비밀번호', '결과']];
     bulkRows.slice().sort((a, b) => a.line - b.line).forEach((r) => {
-      lines.push([r.name, r.id, r.branchName, r.role ? roleLabel(r.role) : r.roleText,
+      lines.push([r.name, r.id, r.branchName, r.hire || r.hireText || '', r.role ? roleLabel(r.role) : r.roleText,
         r.status === 'done' ? r.pw : '', r.status === 'done' ? '등록됨' : `미등록: ${r.msg}`]);
     });
     const d = new Date();
-    downloadXlsx(`직원_등록결과_${ymd(d)}_${hm(d).replace(':', '')}.xlsx`, lines, { sheetName: '등록 결과', textCols: [1, 4] });
+    downloadXlsx(`직원_등록결과_${ymd(d)}_${hm(d).replace(':', '')}.xlsx`, lines, { sheetName: '등록 결과', textCols: [1, 3, 5] });
   });
 
   // 비밀번호 초기화 / 비활성화
@@ -1755,7 +1913,7 @@
     const name = tr.querySelector('[data-field="name"]').value.trim();
     if (!name) return alert('이름을 입력하세요.');
     const bv = tr.querySelector('[data-field="branch_id"]').value;
-    const update = { name, branch_id: bv ? Number(bv) : null };
+    const update = { name, branch_id: bv ? Number(bv) : null, hire_date: tr.querySelector('[data-field="hire_date"]').value || null };
     if (tr.dataset.id !== me.id) {
       Object.assign(update, roleFlags(tr.querySelector('[data-field="role"]').value));
       if (update.is_branch_manager && !update.branch_id) return alert('슈퍼바이저는 소속 지점이 있어야 합니다. 소속 지점을 먼저 선택하세요.');
