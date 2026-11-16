@@ -139,6 +139,15 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 .tag-warn { display: block; font-size: 12px; color: var(--warn); }
 .ot-badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
 .time-input { width: 105px; }
+/* 직원 일괄 등록 */
+.file-btn { display: inline-flex; align-items: center; color: #fff; font-size: inherit; }
+.bulk-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.bulk-wrap thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+tr.bulk-err td { background: #fff7f6; }
+tr.bulk-done td { background: #f3fbf6; }
+.bulk-bad { color: var(--danger); white-space: normal; min-width: 160px; }
+.bulk-good { color: var(--ok); font-weight: 600; }
+
 /* 퇴사자 관리 */
 .ot-badge.muted-badge { background: #8a93a6; }
 .keep-over { color: var(--ok); font-weight: 600; }

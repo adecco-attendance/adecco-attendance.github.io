@@ -131,14 +131,36 @@
     }
   }
 
-  function downloadCsv(filename, lines) {
-    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const csv = '﻿' + lines.map((l) => l.map(cell).join(',')).join('\r\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = filename;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  // 엑셀(.xlsx) 파일 만들기 (SheetJS는 처음 다운로드할 때만 불러옴)
+  //  lines: 첫 줄은 제목, 숫자는 숫자 칸·글자는 텍스트 칸으로 저장
+  //  textCols: 항상 텍스트로 둘 칸 번호 (0으로 시작하는 사번·비밀번호가 숫자로 바뀌지 않게)
+  //  blankRows: 빈 입력 줄 수 (양식용, textCols 칸을 미리 텍스트 서식으로)
+  //  sheets: 추가 시트 [{ name, lines }]
+  function makeSheet(X, lines, { textCols = [], blankRows = 0, filter = true } = {}) {
+    const ws = X.utils.aoa_to_sheet(lines.map((l) => l.map((v) => (v == null ? '' : v))));
+    const strW = (v) => [...String(v ?? '')].reduce((w, ch) => w + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
+    const nCols = Math.max(...lines.map((l) => l.length));
+    ws['!cols'] = Array.from({ length: nCols }, (_, c) => ({ wch: Math.min(50, Math.max(8, ...lines.map((l) => strW(l[c]) + 2))) }));
+    const lastRow = lines.length - 1 + blankRows;
+    textCols.forEach((c) => {
+      for (let r = 1; r <= lastRow; r++) {
+        const ref = X.utils.encode_cell({ r, c });
+        const cell = ws[ref] || (ws[ref] = { t: 's', v: '' });
+        if (cell.t === 'n') { cell.t = 's'; cell.v = String(cell.v); }
+        cell.z = '@';
+      }
+    });
+    if (blankRows) ws['!ref'] = X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: nCols - 1 } });
+    if (filter && lines.length > 1) ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lines.length - 1, c: nCols - 1 } }) };
+    return ws;
+  }
+  async function downloadXlsx(filename, lines, { sheetName = '목록', sheets = [], ...opts } = {}) {
+    try { await loadXlsx(); } catch (e) { alert(e.message); return; }
+    const X = window.XLSX;
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, makeSheet(X, lines, opts), sheetName);
+    sheets.forEach((s) => X.utils.book_append_sheet(wb, makeSheet(X, s.lines, { filter: false }), s.name));
+    X.writeFile(wb, filename, { compression: true });
   }
 
   function showError(el, msg) { el.textContent = msg; el.hidden = !msg; }
@@ -1010,10 +1032,10 @@
     const lines = [['기간', '지점', '이름', '근무일', '정규 근무(분)', '초과근무 승인(분)', '총 근무시간(분)', '총 근무시간(시간)', '일평균(분)', '미퇴근', '기록 수정']];
     const period = `${$('p-from').value} ~ ${$('p-to').value}`;
     summaryRows.forEach((e) => lines.push([
-      period, e.branchLabel, e.name, e.days, mins(e.reg), mins(e.ot), mins(e.total), (mins(e.total) / 60).toFixed(2),
+      period, e.branchLabel, e.name, e.days, mins(e.reg), mins(e.ot), mins(e.total), Math.round(mins(e.total) / 60 * 100) / 100,
       e.doneDays ? mins(e.avg) : '', e.open, e.edited,
     ]));
-    downloadCsv(`개인별근무현황_${$('p-from').value}_${$('p-to').value}.csv`, lines);
+    downloadXlsx(`개인별근무현황_${$('p-from').value}_${$('p-to').value}.xlsx`, lines, { sheetName: '개인별 근무현황' });
   });
 
   $('admin-records').addEventListener('click', (e) => {
@@ -1063,7 +1085,7 @@
     reloadRecords();
   });
 
-  // CSV (엑셀에서 한글 깨짐 방지를 위해 BOM 포함)
+  // 일자별 근무현황 엑셀
   $('csv-btn').addEventListener('click', () => {
     if (!dailyRows.length) return alert('다운로드할 기록이 없습니다. 먼저 조회하세요.');
     const lines = [['날짜', '지점', '이름', '출근', '출근 위치(지점에서 m)', '퇴근', '퇴근 위치(지점에서 m)', '정규 근무(분)', '초과근무 승인(분)', '미승인 초과(분)', '비고', '수정자', '수정일시']];
@@ -1076,7 +1098,7 @@
         r.updated_at ? `${ymd(r.updated_at)} ${hm(r.updated_at)}` : '',
       ]);
     });
-    downloadCsv(`일자별근무현황_${$('d-from').value}_${$('d-to').value}.csv`, lines);
+    downloadXlsx(`일자별근무현황_${$('d-from').value}_${$('d-to').value}.xlsx`, lines, { sheetName: '일자별 근무현황' });
   });
 
   // ---------------------------------------------------------------
@@ -1202,7 +1224,7 @@
         q.reviewed_at ? `${ymd(q.reviewed_at)} ${hm(q.reviewed_at)}` : '', q.review_note || '',
       ]);
     });
-    downloadCsv(`초과근무_${$('o-from').value}_${$('o-to').value}.csv`, lines);
+    downloadXlsx(`초과근무_${$('o-from').value}_${$('o-to').value}.xlsx`, lines, { sheetName: '초과근무' });
   });
 
   // 권한: 일반 사용자(user) / 슈퍼바이저(supervisor, 소속 지점 관리) / 매니저(manager, 전체 관리)
@@ -1292,6 +1314,237 @@
       msg.hidden = false;
       btn.disabled = false;
     }
+  });
+
+  // ---------------------------------------------------------------
+  //  직원 일괄 등록 (엑셀/CSV 명단 → 검사 → 50명씩 나눠 등록 → 결과 파일)
+  // ---------------------------------------------------------------
+  const BULK_HEAD = ['이름', '아이디', '지점', '권한', '초기 비밀번호'];
+  const BULK_MAX = 2000;
+  let bulkRows = [];      // { line, name, id, branchName, branchId, roleText, role, pw, pwAuto, errors[], status, msg }
+  let bulkDone = false;
+
+  let xlsxLoading = null;
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    if (xlsxLoading) return xlsxLoading;
+    xlsxLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = () => resolve();
+      s.onerror = () => { xlsxLoading = null; reject(new Error('엑셀 읽기 도구를 불러오지 못했습니다. 인터넷 연결을 확인하세요.')); };
+      document.head.appendChild(s);
+    });
+    return xlsxLoading;
+  }
+
+  // 헷갈리는 글자(0/O, 1/l/I)를 뺀 10자리 비밀번호
+  function randomPw() {
+    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const buf = new Uint32Array(10);
+    crypto.getRandomValues(buf);
+    let pw = Array.from(buf, (n) => chars[n % chars.length]).join('');
+    if (!/\d/.test(pw)) pw = pw.slice(0, 9) + '7';
+    return pw;
+  }
+
+  const ROLE_WORDS = { '': 'user', 일반: 'user', '일반 사용자': 'user', 일반사용자: 'user', 사용자: 'user', 직원: 'user', user: 'user',
+    슈퍼바이저: 'supervisor', supervisor: 'supervisor', 매니저: 'manager', manager: 'manager' };
+  const roleLabel = (r) => (ROLES.find(([v]) => v === r) || [, '?'])[1];
+
+  $('bulk-template').addEventListener('click', async () => {
+    await loadBranches();
+    const guide = [
+      ['칸', '필수', '설명', '예시'],
+      ['이름', '필수', '30자 이내', '홍길동'],
+      ['아이디', '필수', `영문 소문자·숫자·. _ - 로 2~30자. 로그인할 때 이 아이디만 입력합니다. (@${CFG.EMAIL_DOMAIN || ''})`, 'hong / 00123'],
+      ['지점', '선택', '아래 [사용 중인 지점] 이름을 그대로 적습니다. 비우면 지점 미지정', branches.find((b) => b.is_active)?.name || '본사'],
+      ['권한', '선택', '일반 사용자 / 슈퍼바이저 / 매니저 중 하나. 비우면 일반 사용자. 슈퍼바이저는 지점 필수', '일반 사용자'],
+      ['초기 비밀번호', '선택', '8자 이상. 비우면 10자리 무작위로 자동 생성', ''],
+      [],
+      ['사용 중인 지점'],
+      ...branches.filter((b) => b.is_active).map((b) => [b.name]),
+    ];
+    // 아이디·비밀번호 칸은 텍스트 서식 (00123 같은 사번이 123으로 바뀌지 않게)
+    downloadXlsx('직원_일괄등록_양식.xlsx', [BULK_HEAD], {
+      sheetName: '직원 명단', textCols: [1, 4], blankRows: BULK_MAX, filter: false,
+      sheets: [{ name: '작성 안내', lines: guide }],
+    });
+  });
+
+  // 파일 → 2차원 배열 (CSV는 UTF-8이 아니면 엑셀 기본 한글 인코딩(EUC-KR)으로 읽음)
+  async function readSheet(file) {
+    await loadXlsx();
+    const buf = await file.arrayBuffer();
+    let wb;
+    if (/\.csv$/i.test(file.name)) {
+      let text;
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+      catch (_) { text = new TextDecoder('euc-kr').decode(buf); }
+      wb = window.XLSX.read(text.replace(/^﻿/, ''), { type: 'string', raw: true });
+    } else {
+      wb = window.XLSX.read(buf, { type: 'array' });
+    }
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  }
+
+  function parseBulk(table) {
+    const norm = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+    const hi = table.findIndex((r) => r.map(norm).includes('이름') && r.map(norm).includes('아이디'));
+    if (hi < 0) throw new Error('첫 줄에 "이름", "아이디" 칸 제목이 있는 양식을 사용하세요. ([양식 내려받기])');
+    const head = table[hi].map(norm);
+    const col = (...names) => head.findIndex((h) => names.includes(h));
+    const c = { name: col('이름'), id: col('아이디'), branch: col('지점', '소속 지점', '소속지점'), role: col('권한'), pw: col('초기 비밀번호', '초기비밀번호', '비밀번호') };
+    const rows = [];
+    table.slice(hi + 1).forEach((r, k) => {
+      const get = (i) => (i < 0 ? '' : norm(r[i]));
+      if (![c.name, c.id, c.branch, c.role, c.pw].some((i) => get(i))) return; // 빈 줄
+      rows.push({ line: hi + k + 2, name: get(c.name), id: get(c.id).toLowerCase(), branchName: get(c.branch), roleText: get(c.role), pw: c.pw < 0 ? '' : String(r[c.pw] ?? '').trim() });
+    });
+    if (!rows.length) throw new Error('명단이 비어 있습니다.');
+    if (rows.length > BULK_MAX) throw new Error(`한 번에 ${BULK_MAX}명까지 등록할 수 있습니다. 파일을 나눠서 올려 주세요. (현재 ${rows.length}명)`);
+    return rows;
+  }
+
+  function checkBulk(rows) {
+    const taken = new Set();
+    staff.filter((s) => !s.deleted_at).forEach((s) => taken.add(loginIdOf(s.email)));
+    authStatus.forEach((u) => { if (u.email) taken.add(loginIdOf(u.email)); });
+    const count = new Map();
+    rows.forEach((r) => count.set(r.id, (count.get(r.id) || 0) + 1));
+    rows.forEach((r) => {
+      const e = [];
+      if (!r.name) e.push('이름 없음'); else if (r.name.length > 30) e.push('이름 30자 초과');
+      if (!r.id) e.push('아이디 없음');
+      else if (!/^[a-z0-9._-]{2,30}$/.test(r.id)) e.push('아이디는 영문 소문자·숫자·._- 2~30자');
+      else if (taken.has(r.id)) e.push('이미 사용 중인 아이디');
+      else if (count.get(r.id) > 1) e.push('파일 안에서 아이디 중복');
+      r.branchId = null;
+      if (r.branchName) {
+        const b = branches.find((x) => x.name === r.branchName);
+        if (!b) e.push(`없는 지점 "${r.branchName}"`);
+        else if (!b.is_active) e.push(`사용 중지된 지점 "${r.branchName}"`);
+        else r.branchId = b.id;
+      }
+      r.role = ROLE_WORDS[r.roleText.replace(/\s+/g, ' ')] || ROLE_WORDS[r.roleText.toLowerCase()];
+      if (!r.role) e.push(`권한 "${r.roleText}"을(를) 알 수 없음`);
+      else if (r.role === 'supervisor' && !r.branchId) e.push('슈퍼바이저는 지점 필수');
+      r.pwAuto = !r.pw;
+      if (r.pwAuto) r.pw = randomPw();
+      else if (r.pw.length < 8) e.push('비밀번호 8자 이상');
+      r.errors = e;
+      r.status = e.length ? 'invalid' : 'ready';
+      r.msg = e.join(', ');
+    });
+  }
+
+  function renderBulk() {
+    const ok = bulkRows.filter((r) => r.status === 'ready').length;
+    const bad = bulkRows.filter((r) => r.status === 'invalid').length;
+    const done = bulkRows.filter((r) => r.status === 'done').length;
+    const fail = bulkRows.filter((r) => r.status === 'fail').length;
+    const sum = $('bulk-summary');
+    if (bulkDone) {
+      sum.textContent = `등록 완료: 성공 ${done}명${fail ? ` · 실패 ${fail}명` : ''}${bad ? ` · 검사 오류로 제외 ${bad}명` : ''}. [결과 파일 내려받기]로 아이디·초기 비밀번호를 받아 직원에게 전달하세요.`;
+      sum.className = `msg ${fail ? 'err' : 'ok'}`;
+    } else {
+      sum.textContent = `총 ${bulkRows.length}명 · 등록 가능 ${ok}명${bad ? ` · 오류 ${bad}명 (오류가 있는 직원은 등록되지 않습니다. 파일을 고쳐 다시 올릴 수 있습니다)` : ''}`;
+      sum.className = `msg ${bad ? 'err' : 'ok'}`;
+    }
+    $('bulk-run').hidden = bulkDone;
+    $('bulk-run').disabled = !ok;
+    $('bulk-run').textContent = `${ok}명 등록`;
+    $('bulk-result').hidden = !bulkDone;
+    // 오류·실패를 위로
+    const order = { invalid: 0, fail: 0, ready: 1, done: 2 };
+    const list = bulkRows.slice().sort((a, b) => order[a.status] - order[b.status] || a.line - b.line);
+    $('bulk-list').innerHTML = list.map((r) => {
+      const cls = r.status === 'invalid' || r.status === 'fail' ? 'bulk-err' : r.status === 'done' ? 'bulk-done' : '';
+      const res = r.status === 'invalid' ? `<span class="bulk-bad">${esc(r.msg)}</span>`
+        : r.status === 'fail' ? `<span class="bulk-bad">등록 실패: ${esc(r.msg)}</span>`
+          : r.status === 'done' ? '<span class="bulk-good">등록됨</span>' : '<span class="muted">등록 가능</span>';
+      return `<tr class="${cls}"><td class="num">${r.line}</td><td>${esc(r.name)}</td><td>${esc(r.id)}</td><td>${esc(r.branchName || '(미지정)')}</td>
+        <td>${r.role ? roleLabel(r.role) : esc(r.roleText)}</td><td>${r.pwAuto ? '<span class="muted">자동 생성</span>' : '직접 지정'}</td><td>${res}</td></tr>`;
+    }).join('');
+  }
+
+  $('bulk-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    $('bulk-file-name').textContent = file.name;
+    bulkDone = false;
+    $('bulk-preview').hidden = true;
+    try {
+      await Promise.all([loadBranches(), loadStaff()]);
+      bulkRows = parseBulk(await readSheet(file));
+      checkBulk(bulkRows);
+      renderBulk();
+      $('bulk-preview').hidden = false;
+    } catch (err) {
+      bulkRows = [];
+      alert(err.message);
+    }
+  });
+
+  $('bulk-clear').addEventListener('click', () => {
+    if (bulkRows.length && !bulkDone && !confirm('명단을 닫을까요? (아직 등록하지 않았습니다)')) return;
+    bulkRows = []; bulkDone = false;
+    $('bulk-preview').hidden = true;
+    $('bulk-file-name').textContent = '';
+  });
+
+  $('bulk-run').addEventListener('click', async () => {
+    const todo = bulkRows.filter((r) => r.status === 'ready');
+    if (!todo.length) return;
+    const bad = bulkRows.length - todo.length;
+    if (!confirm(`${todo.length}명을 등록합니다.${bad ? `\n(오류 ${bad}명은 제외)` : ''}\n계속할까요?`)) return;
+    showBusy('직원 등록 중', '');
+    $('busy-text').dataset.retry = '1';
+    const CHUNK = 50;
+    try {
+      for (let i = 0; i < todo.length; i += CHUNK) {
+        $('busy-text').textContent = `${i} / ${todo.length}명 완료\n화면을 닫지 말고 기다려 주세요.`;
+        const part = todo.slice(i, i + CHUNK);
+        let results = null;
+        for (let attempt = 1; attempt <= 3 && !results; attempt++) {
+          try {
+            const d = await staffApi({
+              action: 'bulk_create',
+              domain: CFG.EMAIL_DOMAIN,
+              rows: part.map((r) => ({ login_id: r.id, name: r.name, password: r.pw, branch_id: r.branchId, ...roleFlags(r.role) })),
+            });
+            results = d.results;
+          } catch (err) {
+            if (attempt === 3) part.forEach((r) => { r.status = 'fail'; r.msg = err.message; });
+            else await sleep(2000 * attempt);
+          }
+        }
+        // 응답을 못 받았어도 서버에서는 만들어졌을 수 있음 → 다시 보내면 '이미 사용 중'이 되므로 그 경우도 실패로 남기고 목록에서 확인
+        (results || []).forEach((res, k) => {
+          const r = part[k];
+          if (res && res.ok) { r.status = 'done'; r.msg = ''; }
+          else { r.status = 'fail'; r.msg = res?.error || '알 수 없는 오류'; }
+        });
+      }
+    } finally {
+      hideBusy();
+    }
+    bulkDone = true;
+    renderBulk();
+    await Promise.all([loadStaff(), loadAuthStatus()]);
+    renderStaff();
+  });
+
+  $('bulk-result').addEventListener('click', () => {
+    const lines = [['이름', '아이디', '지점', '권한', '초기 비밀번호', '결과']];
+    bulkRows.slice().sort((a, b) => a.line - b.line).forEach((r) => {
+      lines.push([r.name, r.id, r.branchName, r.role ? roleLabel(r.role) : r.roleText,
+        r.status === 'done' ? r.pw : '', r.status === 'done' ? '등록됨' : `미등록: ${r.msg}`]);
+    });
+    const d = new Date();
+    downloadXlsx(`직원_등록결과_${ymd(d)}_${hm(d).replace(':', '')}.xlsx`, lines, { sheetName: '등록 결과', textCols: [1, 4] });
   });
 
   // 비밀번호 초기화 / 비활성화
