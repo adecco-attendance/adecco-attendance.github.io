@@ -135,6 +135,13 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 .tag-warn { display: block; font-size: 12px; color: var(--warn); }
 .ot-badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
 .time-input { width: 105px; }
+/* 퇴사자 관리 */
+.ot-badge.muted-badge { background: #8a93a6; }
+.keep-over { color: var(--ok); font-weight: 600; }
+.keep-due { color: var(--warn); }
+.purge-warn { background: #fff1f0; color: var(--danger); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.purge-warn ul { margin: 6px 0 0; padding-left: 18px; color: var(--text); }
+.purge-keep { margin: 0; background: #fff4d6; color: #7a5200; border-radius: 8px; padding: 10px 12px; font-size: 14px; }
 
 /* GPS */
 .gps-box { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }

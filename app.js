@@ -252,6 +252,10 @@
       renderBranches();
       Promise.all([loadBranches(), loadStaff()]).then(later('branch-list', renderBranches));
     }
+    if (sub === 'retired') {
+      renderRetired();
+      Promise.all([loadBranches(), loadStaff(), loadRetiredSummary()]).then(renderRetired);
+    }
   }));
 
   // ---------------------------------------------------------------
@@ -569,7 +573,7 @@
     const { data, error } = await sb.from('branches').select('*').order('name');
     if (error) { alert(errMsg(error)); return; }
     branches = data;
-    ['p-branch', 'd-branch', 'o-branch', 's-branch'].forEach((id) => {
+    ['p-branch', 'd-branch', 'o-branch', 's-branch', 'r-branch'].forEach((id) => {
       const cur = $(id).value;
       $(id).innerHTML = branchOptions({ includeAll: true });
       $(id).value = cur;
@@ -588,6 +592,7 @@
     if (error) { alert(errMsg(error)); return; }
     staff = data;
     fillUserSelects();
+    if (me?.is_admin) updateRetiredBadge();
   }
 
   // ---- 직원 계정 관리 (Edge Function 'manage-staff', 관리자 전용) ----
@@ -1123,22 +1128,10 @@
     $('na-branch').innerHTML = branchOptions({ onlyActive: true });
     $('na-branch').value = curNa;
     const statusKnown = authStatus.size > 0;
-    const showDeleted = $('s-show-deleted').checked;
-    const list = staff.filter((s) => matchBranch(s.branch_id, fb) && (showDeleted || !s.deleted_at))
-      .sort((a, b) => (!!a.deleted_at - !!b.deleted_at) || (isActive(b.id) - isActive(a.id)) || a.name.localeCompare(b.name, 'ko'));
+    // 삭제(퇴사) 처리된 직원은 [퇴사자 관리]에서 따로 관리
+    const list = staff.filter((s) => matchBranch(s.branch_id, fb) && !s.deleted_at)
+      .sort((a, b) => (isActive(b.id) - isActive(a.id)) || a.name.localeCompare(b.name, 'ko'));
     $('staff-list').innerHTML = list.map((s) => {
-      if (s.deleted_at) {
-        return `
-      <tr data-id="${s.id}" class="inactive">
-        <td>${esc(s.name)}</td>
-        <td>${esc(branchName(s.branch_id))}</td>
-        <td>${esc(loginIdOf(s.email))}</td>
-        <td><span class="muted">삭제됨</span></td>
-        <td class="edited">퇴사 처리 ${ymd(s.deleted_at)}</td>
-        <td></td>
-        <td class="muted small">기록 보존</td>
-      </tr>`;
-      }
       const st = authStatus.get(s.id);
       const active = isActive(s.id);
       const self = s.id === me.id;
@@ -1239,7 +1232,7 @@
         await staffApi({ action: 'delete', user_id: s.id });
         await Promise.all([loadStaff(), loadAuthStatus()]);
         renderStaff();
-        alert(`${s.name} 계정을 삭제했습니다. 근태 기록은 보존됩니다.`);
+        alert(`${s.name} 계정을 삭제했습니다. 근태 기록은 보존되며 [퇴사자 관리]에서 볼 수 있습니다.`);
       } catch (err) {
         alert(err.message);
         e.target.disabled = false;
@@ -1277,7 +1270,140 @@
     }
   });
   $('s-branch').addEventListener('change', renderStaff);
-  $('s-show-deleted').addEventListener('change', renderStaff);
+
+  // ---------------------------------------------------------------
+  //  퇴사자 관리 (매니저 전용): 삭제 처리된 직원 목록 + 기록 보기 + 영구 삭제
+  // ---------------------------------------------------------------
+  const KEEP_YEARS = 3; // 근로기준법상 근로계약 관련 서류 보존 기간
+  let retiredInfo = new Map(); // user_id -> { att_count, first_date, last_date, ot_count }
+  let retiredSeq = 0;
+
+  function updateRetiredBadge() {
+    const n = staff.filter((s) => s.deleted_at).length;
+    $('retired-badge').hidden = !n;
+    $('retired-badge').textContent = n ? String(n) : '';
+  }
+
+  async function loadRetiredSummary() {
+    if (!me?.is_admin) return;
+    const seq = ++retiredSeq;
+    const { data, error } = await sb.rpc('retired_staff_summary');
+    if (seq !== retiredSeq) return;
+    if (error) { console.warn('퇴사자 요약을 불러오지 못했습니다:', errMsg(error)); return; }
+    retiredInfo = new Map(data.map((r) => [r.user_id, r]));
+  }
+
+  // 보존 기한 = 마지막 근무일 + 3년 (기록이 없으면 기한 없음)
+  function keepUntil(info) {
+    if (!info?.last_date) return null;
+    const [y, m, d] = info.last_date.split('-');
+    return `${Number(y) + KEEP_YEARS}-${m}-${d}`;
+  }
+  const keepOver = (until) => !until || ymd(new Date()) >= until;
+
+  function renderRetired() {
+    if (!me?.is_admin) return;
+    const fb = $('r-branch').value;
+    const q = $('r-search').value.trim();
+    const list = staff.filter((s) => s.deleted_at && matchBranch(s.branch_id, fb) && (!q || s.name.includes(q)))
+      .sort((a, b) => b.deleted_at.localeCompare(a.deleted_at) || a.name.localeCompare(b.name, 'ko'));
+    const known = retiredInfo.size > 0 || !staff.some((s) => s.deleted_at);
+    $('retired-list').innerHTML = list.map((s) => {
+      const info = retiredInfo.get(s.id);
+      const until = keepUntil(info);
+      const keep = !info ? '-'
+        : !until ? '<span class="muted">기록 없음</span>'
+        : keepOver(until) ? `<span class="keep-over">경과</span> <span class="edited">(${until})</span>`
+        : `<span class="keep-due">${until}까지</span>`;
+      const period = !info ? '-' : info.first_date ? `${info.first_date} ~ ${info.last_date}` : '-';
+      return `
+      <tr data-id="${s.id}">
+        <td>${esc(s.name)}</td>
+        <td>${esc(branchName(s.branch_id))}</td>
+        <td>${esc(loginIdOf(s.email))}</td>
+        <td class="num">${ymd(s.deleted_at)}</td>
+        <td class="num">${period}</td>
+        <td class="num">${info ? `${Number(info.att_count).toLocaleString()}건` : '-'}</td>
+        <td class="num">${info ? `${Number(info.ot_count).toLocaleString()}건` : '-'}</td>
+        <td>${keep}</td>
+        <td class="actions">
+          <button class="btn small" data-rview ${info && !info.first_date ? 'disabled title="출퇴근 기록이 없습니다"' : ''}>기록 보기</button>
+          <button class="btn small danger-outline" data-rpurge ${known ? '' : 'disabled'}>영구 삭제</button>
+        </td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="9" class="empty">${staff.some((s) => s.deleted_at) ? '조건에 맞는 퇴사자가 없습니다.' : '퇴사 처리된 직원이 없습니다.'}</td></tr>`;
+  }
+  $('r-branch').addEventListener('change', renderRetired);
+  $('r-search').addEventListener('input', renderRetired);
+
+  // [기록 보기] → 출퇴근 기록 탭의 개인별 근무현황에서 그 직원의 근무 기간을 조회
+  function showRetiredRecords(s) {
+    const info = retiredInfo.get(s.id);
+    document.querySelector('.subtab[data-sub="records"]').click();
+    $('p-branch').value = '';
+    fillUserSelect('p');
+    $('p-user').value = s.id;
+    if (info?.first_date) {
+      $('p-month').value = '';
+      $('p-from').value = info.first_date;
+      $('p-to').value = info.last_date;
+    }
+    loadPersonal();
+    $('p-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // [영구 삭제] 확인 창
+  let purgeTarget = null;
+  function openPurge(s) {
+    purgeTarget = s;
+    const info = retiredInfo.get(s.id) || { att_count: 0, ot_count: 0 };
+    const until = keepUntil(info);
+    $('purge-title').textContent = `영구 삭제 - ${s.name}`;
+    $('purge-items').innerHTML = `
+      <li>직원 정보: ${esc(s.name)} (${esc(loginIdOf(s.email))}, ${esc(branchName(s.branch_id))})</li>
+      <li>출퇴근 기록 ${Number(info.att_count).toLocaleString()}건${info.first_date ? ` (${info.first_date} ~ ${info.last_date})` : ''}</li>
+      <li>초과근무 신청 ${Number(info.ot_count).toLocaleString()}건</li>`;
+    const early = !keepOver(until);
+    $('purge-keep').hidden = !early;
+    $('purge-keep').innerHTML = early
+      ? `아직 <b>보존 기한(${until}) 전</b>입니다. 법정 보존 의무가 있을 수 있으니 인사·노무 담당자와 확인하세요. 필요하면 [기록 보기]에서 엑셀로 먼저 받아 두세요.`
+      : '';
+    $('purge-ack-wrap').hidden = !early;
+    $('purge-ack').checked = false;
+    $('purge-name-hint').textContent = `"${s.name}"`;
+    $('purge-name').value = '';
+    showError($('purge-error'), '');
+    updatePurgeOk();
+    $('purge-dialog').showModal();
+  }
+  function updatePurgeOk() {
+    if (!purgeTarget) return;
+    const nameOk = $('purge-name').value.trim() === purgeTarget.name;
+    const ackOk = $('purge-ack-wrap').hidden || $('purge-ack').checked;
+    $('purge-ok').disabled = !(nameOk && ackOk);
+  }
+  $('purge-name').addEventListener('input', updatePurgeOk);
+  $('purge-ack').addEventListener('change', updatePurgeOk);
+  $('purge-cancel').addEventListener('click', () => $('purge-dialog').close());
+  $('purge-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!purgeTarget) return;
+    const btn = $('purge-ok'); btn.disabled = true;
+    const { data, error } = await sb.rpc('purge_retired_staff', { p_user_id: purgeTarget.id, p_name: $('purge-name').value.trim() });
+    if (error) { showError($('purge-error'), errMsg(error)); updatePurgeOk(); return; }
+    $('purge-dialog').close();
+    await Promise.all([loadStaff(), loadRetiredSummary()]);
+    renderRetired();
+    alert(`${data.name}님의 정보와 기록(출퇴근 ${data.attendance}건, 초과근무 ${data.overtime}건)을 영구 삭제했습니다.`);
+  });
+
+  $('retired-list').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    const s = tr && staff.find((x) => x.id === tr.dataset.id);
+    if (!s) return;
+    if (e.target.matches('[data-rview]')) showRetiredRecords(s);
+    else if (e.target.matches('[data-rpurge]')) openPurge(s);
+  });
 
   $('staff-list').addEventListener('click', async (e) => {
     if (!e.target.matches('[data-save]')) return;

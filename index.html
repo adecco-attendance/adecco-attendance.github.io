@@ -122,6 +122,7 @@
         <button class="subtab active" data-sub="records">출퇴근 기록</button>
         <button class="subtab" data-sub="overtime">초과근무 승인<span id="ot-badge" class="ot-badge" hidden></span></button>
         <button class="subtab hq-only" data-sub="staff">직원 관리</button>
+        <button class="subtab hq-only" data-sub="retired">퇴사자 관리<span id="retired-badge" class="ot-badge muted-badge" hidden></span></button>
         <button class="subtab hq-only" data-sub="branches">지점 관리</button>
         <span id="manager-note" class="muted small" hidden></span>
       </div>
@@ -257,7 +258,6 @@
           <label>지점
             <select id="s-branch"></select>
           </label>
-          <label class="check-label"><input type="checkbox" id="s-show-deleted"> 삭제된 퇴사자도 보기</label>
         </div>
         <div class="table-wrap">
           <table>
@@ -268,8 +268,33 @@
         <p class="muted small">
           지점을 옮겨도 이전 출퇴근 기록은 기존 지점 기록으로 남습니다.
           퇴사자는 먼저 <b>비활성화</b>하세요. 로그인이 막히고 근태 기록은 그대로 보존되며, 오늘 현황·개인별 근무 현황의 미출근자에서도 빠집니다.
-          비활성화된 직원은 <b>삭제</b>할 수 있습니다. 로그인 계정만 지워지고 이름과 근태 기록은 "퇴사"로 남습니다.
+          비활성화된 직원은 <b>삭제</b>할 수 있습니다. 로그인 계정만 지워지고 이름과 근태 기록은 "퇴사"로 남으며, <b>[퇴사자 관리]</b>로 옮겨집니다.
         </p>
+      </div>
+
+      <div id="sub-retired" class="card" data-group="retired" hidden>
+        <div class="card-head"><h2>퇴사자 관리</h2></div>
+        <div class="filters">
+          <label>마지막 소속 지점
+            <select id="r-branch"></select>
+          </label>
+          <label class="grow">이름 검색 <input type="search" id="r-search" placeholder="예) 홍길동"></label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>이름</th><th>마지막 소속</th><th>아이디</th><th>퇴사 처리일</th><th>근무 기간</th><th>출퇴근 기록</th><th>초과근무</th><th>보존 기한</th><th>관리</th></tr></thead>
+            <tbody id="retired-list"></tbody>
+          </table>
+        </div>
+        <div class="help-box">
+          <b>퇴사자 기록 관리</b>
+          <ol>
+            <li>직원 관리에서 <b>비활성화 → 삭제</b>한 직원이 여기에 모입니다. 로그인은 불가능하고 이름과 근태 기록만 남아 있습니다.</li>
+            <li><b>[기록 보기]</b>를 누르면 개인별 근무현황에서 그 직원의 근무 기간 기록을 바로 조회합니다.</li>
+            <li><b>[영구 삭제]</b>는 이름·출퇴근·초과근무 기록을 <b>모두 지우며 되돌릴 수 없습니다.</b> 엑셀로 받아 두려면 먼저 [기록 보기]에서 다운로드하세요.</li>
+          </ol>
+          <b>보존 기한</b>은 마지막 근무일로부터 3년입니다. 근로기준법상 근로계약 관련 서류는 3년간 보존해야 하므로, 기한이 지나지 않은 기록은 인사·노무 담당자와 확인한 뒤 삭제하세요.
+        </div>
       </div>
 
       <div id="sub-branches" class="card" data-group="branches" hidden>
@@ -331,6 +356,26 @@
         <span class="spacer"></span>
         <button type="button" class="btn" id="reset-cancel">취소</button>
         <button type="submit" class="btn primary">초기화</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- (매니저) 퇴사자 영구 삭제 -->
+  <dialog id="purge-dialog">
+    <form id="purge-form" method="dialog" class="dialog-body" autocomplete="off">
+      <h3 id="purge-title">영구 삭제</h3>
+      <div class="purge-warn">
+        <b>되돌릴 수 없습니다.</b> 아래 기록이 모두 지워집니다.
+        <ul id="purge-items"></ul>
+      </div>
+      <p id="purge-keep" class="purge-keep" hidden></p>
+      <label id="purge-ack-wrap" class="check-label" hidden><input type="checkbox" id="purge-ack"> 보존 기한 전 삭제임을 확인했습니다</label>
+      <label><span>확인을 위해 이름 <b id="purge-name-hint"></b>을(를) 입력하세요</span><input type="text" id="purge-name" required autocomplete="off"></label>
+      <p id="purge-error" class="error" hidden></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="purge-cancel">취소</button>
+        <button type="submit" class="btn danger" id="purge-ok" disabled>영구 삭제</button>
       </div>
     </form>
   </dialog>
