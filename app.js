@@ -1741,11 +1741,25 @@
     }).join('');
   }
 
-  $('bulk-file').addEventListener('change', async (e) => {
+  $('bulk-file').addEventListener('change', (e) => {
     const file = e.target.files[0];
     e.target.value = '';
+    if (file) handleBulkFile(file);
+  });
+  // 끌어다 놓기로 올리기 (상자 밖에 잘못 놓아도 브라우저가 파일을 열어 화면이 바뀌지 않게 막음)
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+  const drop = $('bulk-drop');
+  ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); if (t === 'drop' || !drop.contains(e.relatedTarget)) drop.classList.remove('over'); }));
+  drop.addEventListener('drop', (e) => {
+    const file = e.dataTransfer?.files?.[0];
     if (!file) return;
-    $('bulk-file-name').textContent = file.name;
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return alert('엑셀(.xlsx) 또는 CSV 파일만 올릴 수 있습니다.');
+    handleBulkFile(file);
+  });
+  async function handleBulkFile(file) {
+    $('bulk-file-name').textContent = `올린 파일: ${file.name}`;
     bulkDone = false;
     $('bulk-preview').hidden = true;
     try {
@@ -1758,7 +1772,7 @@
       bulkRows = [];
       alert(err.message);
     }
-  });
+  }
 
   $('bulk-clear').addEventListener('click', () => {
     if (bulkRows.length && !bulkDone && !confirm('명단을 닫을까요? (아직 등록하지 않았습니다)')) return;

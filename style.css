@@ -146,6 +146,11 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 
 /* 직원 일괄 등록 */
 .file-btn { display: inline-flex; align-items: center; color: #fff; font-size: inherit; }
+.drop-zone { border: 2px dashed #c9d3e3; border-radius: 12px; padding: 18px 14px; text-align: center; display: grid; gap: 6px; justify-items: center; background: #fafbfd; margin-bottom: 12px; transition: background .15s, border-color .15s; }
+.drop-zone p { margin: 0; }
+.drop-zone .drop-title { font-size: 15px; color: var(--text); }
+.drop-zone .drop-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+.drop-zone.over { background: #e8effd; border-color: var(--primary); }
 .bulk-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
 .bulk-wrap thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
 tr.bulk-err td { background: #fff7f6; }
