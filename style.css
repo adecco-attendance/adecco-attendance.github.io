@@ -21,6 +21,9 @@ body {
   color: var(--text);
   font-size: 15px;
   line-height: 1.5;
+  /* 한글이 단어 중간에서 줄바꿈되지 않도록 (예: "시도합니/다" 방지) */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 [hidden] { display: none !important; }
 
@@ -99,7 +102,8 @@ input:focus, select:focus { outline: 2px solid rgba(47, 111, 237, .35); border-c
 .badge.working { background: #e3f6eb; color: var(--ok); }
 .badge.done { background: #e8effd; color: var(--primary); }
 .clock-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.msg { margin: 0; font-size: 14px; }
+.msg { margin: 0; font-size: 14px; white-space: pre-line; }
+#login-error { white-space: pre-line; }
 .msg.ok { color: var(--ok); }
 .msg.err { color: var(--danger); }
 
@@ -186,6 +190,13 @@ dialog { border: 0; border-radius: var(--radius); padding: 0; width: min(420px, 
 dialog::backdrop { background: rgba(15, 20, 35, .45); }
 .dialog-body { padding: 20px; display: grid; gap: 12px; }
 .dialog-actions { display: flex; gap: 8px; margin-top: 4px; }
+
+/* 출퇴근 처리 중 */
+.busy-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 20, 35, .55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.busy-box { background: #fff; border-radius: var(--radius); padding: 28px 20px; width: min(360px, 100%); text-align: center; display: grid; gap: 10px; justify-items: center; box-shadow: 0 10px 40px rgba(0, 0, 0, .25); }
+.busy-box strong { font-size: 19px; }
+.busy-box p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text); white-space: pre-line; }
+.busy-box .spinner { width: 44px; height: 44px; border-width: 4px; }
 
 /* 로딩 */
 .spinner { width: 32px; height: 32px; border: 3px solid var(--line); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; }

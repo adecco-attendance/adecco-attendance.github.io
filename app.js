@@ -114,6 +114,7 @@
     if (/branches_name_key/.test(m)) return '같은 이름의 지점이 이미 있습니다.';
     if (/foreign key/i.test(m) && /branch/i.test(m)) return '소속 직원이나 출퇴근 기록이 있는 지점은 삭제할 수 없습니다. 대신 "사용"을 해제하세요.';
     if (/Failed to fetch|NetworkError/i.test(m)) return '서버에 연결할 수 없습니다. 네트워크 상태를 확인하세요.';
+    if (error?.status === 429 || /rate limit/i.test(m)) return '접속이 원활하지 않습니다.\n1~2분 뒤 다시 시도해 주세요.';
     if (/should be different/i.test(m)) return '기존 비밀번호와 다른 비밀번호를 입력하세요.';
     return m;
   }
@@ -199,11 +200,39 @@
     let id = $('login-id').value.trim().toLowerCase();
     if (!id.includes('@') && CFG.EMAIL_DOMAIN) id = `${id}@${CFG.EMAIL_DOMAIN}`;
     const btn = e.submitter; btn.disabled = true;
-    const { data, error } = await sb.auth.signInWithPassword({ email: id, password: $('login-pw').value });
-    btn.disabled = false;
-    if (error) return showError($('login-error'), errMsg(error));
-    $('login-pw').value = '';
-    enterApp(data.user);
+    const pw = $('login-pw').value;
+    const MAX = 6;
+    let data = null;
+    let error = null;
+    showBusy('로그인 중', '접속이 지연되고 있습니다.\n화면을 닫거나 다시 누르지 말고\n기다려 주세요.');
+    try {
+      for (let attempt = 1; attempt <= MAX; attempt++) {
+        let res;
+        try { res = await sb.auth.signInWithPassword({ email: id, password: pw }); }
+        catch (err) { res = { data: null, error: err }; }
+        if (!res.error) { data = res.data; error = null; break; }
+        error = res.error;
+        const st = error.status || 0;
+        const busy = st === 429 || /rate limit/i.test(error.message || '');
+        if (attempt === MAX || !(busy || retryable({ error, status: st }))) break;
+        $('busy-text').dataset.retry = '1';
+        $('busy-text').textContent = busy
+          ? `접속자가 많아 순서를 기다리고 있습니다.\n자동으로 다시 시도합니다. (${attempt}/${MAX - 1})`
+          : `접속이 원활하지 않아\n자동으로 다시 시도합니다. (${attempt}/${MAX - 1})`;
+        // 접속 제한(429)은 조금 길게, 사람마다 다르게 기다렸다가 재시도
+        await sleep(busy ? 5000 + Math.random() * 10000 : 1000 * attempt + Math.random() * 2000);
+      }
+      if (!error) {
+        $('busy-text').dataset.retry = '1';
+        $('busy-text').textContent = '내 정보를 불러오는 중입니다...';
+        $('login-pw').value = '';
+        await enterApp(data.user);
+      }
+    } finally {
+      hideBusy();
+      btn.disabled = false;
+    }
+    if (error) showError($('login-error'), errMsg(error));
   });
 
   $('logout-btn').addEventListener('click', async () => {
@@ -393,15 +422,77 @@
     el.textContent = text; el.className = `msg ${kind || ''}`; el.hidden = !text;
   }
 
+  // 출퇴근 처리 중 전체 화면 로딩 (접속이 몰려 늦어질 때 안내 + 자동 재시도)
+  let busyTimer = null;
+  const preventLeave = (e) => { e.preventDefault(); e.returnValue = ''; };
+  function showBusy(title, slowText) {
+    const start = Date.now();
+    $('busy-title').textContent = title;
+    $('busy-text').textContent = '잠시만 기다려 주세요.';
+    $('busy-sec').textContent = '';
+    $('busy-overlay').hidden = false;
+    window.addEventListener('beforeunload', preventLeave);
+    clearInterval(busyTimer);
+    busyTimer = setInterval(() => {
+      const sec = Math.floor((Date.now() - start) / 1000);
+      if (sec >= 3 && !$('busy-text').dataset.retry) {
+        $('busy-text').textContent = slowText;
+      }
+      $('busy-sec').textContent = sec >= 3 ? `${sec}초 경과` : '';
+    }, 500);
+  }
+  function hideBusy() {
+    clearInterval(busyTimer);
+    delete $('busy-text').dataset.retry;
+    $('busy-overlay').hidden = true;
+    window.removeEventListener('beforeunload', preventLeave);
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // 통신 끊김·시간 초과·서버 혼잡이면 다시 시도할 가치가 있음
+  const retryable = (res) => [0, 408, 429, 500, 502, 503, 504, 520, 522, 524].includes(res.status || 0)
+    || /Failed to fetch|NetworkError|Load failed|network|timeout|abort/i.test(res.error?.message || '');
+  // 앞선 시도가 실제로는 서버에 반영된 경우 (응답만 못 받음)
+  const alreadyDone = (fn, error) => (fn === 'clock_in'
+    ? /이미 출근 등록/.test(error?.message || '')
+    : /퇴근할 출근 기록이 없습니다/.test(error?.message || ''));
+
   async function doClock(fn, label) {
     if (!gpsAllowed()) return setMsg('지점 반경 안에서만 출퇴근할 수 있습니다.', 'err');
     if (!confirm(`${label} 하시겠습니까?`)) return;
     $('clock-in-btn').disabled = true; $('clock-out-btn').disabled = true;
+    setMsg('');
     const args = branchLoc() && geo.status === 'ok' ? { p_lat: geo.lat, p_lng: geo.lng } : {};
-    const { data, error } = await sb.rpc(fn, args);
-    if (error) setMsg(errMsg(error), 'err');
-    else setMsg(`${label} 완료 (${hm(fn === 'clock_in' ? data.clock_in : data.clock_out)})`, 'ok');
+    const MAX = 4;
+    let data = null;
+    let error = null;
+    let done = false;
+    showBusy(`${label} 처리 중`, '처리가 지연되고 있습니다.\n화면을 닫거나 다시 누르지 말고\n기다려 주세요.');
+    try {
+      for (let attempt = 1; attempt <= MAX; attempt++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 45000);
+        let res;
+        try { res = await sb.rpc(fn, args).abortSignal(ctrl.signal); }
+        catch (e) { res = { error: e, status: 0 }; }
+        finally { clearTimeout(timer); }
+        if (!res.error) { data = res.data; done = true; break; }
+        if (attempt > 1 && alreadyDone(fn, res.error)) { done = true; break; }
+        if (attempt === MAX || !retryable(res)) { error = res.error; break; }
+        $('busy-text').dataset.retry = '1';
+        $('busy-text').textContent = `접속이 원활하지 않아\n자동으로 다시 시도합니다. (${attempt}/${MAX - 1})\n화면을 닫지 말고 기다려 주세요.`;
+        await sleep(1000 * attempt + Math.random() * 2000); // 동시에 몰리지 않도록 조금씩 흩어서 재시도
+      }
+    } finally {
+      hideBusy();
+    }
     await refreshToday();
+    if (done) {
+      const t = data ? (fn === 'clock_in' ? data.clock_in : data.clock_out)
+        : (fn === 'clock_in' ? todayRow?.clock_in : todayRow?.clock_out);
+      setMsg(`${label} 완료${t ? ` (${hm(t)})` : ''}`, 'ok');
+    } else {
+      setMsg(retryable({ error }) ? `${label}이 처리되지 않았습니다.\n인터넷 연결을 확인한 뒤 다시 눌러 주세요.` : errMsg(error), 'err');
+    }
     loadMyRecords();
     loadMyOvertime();
   }

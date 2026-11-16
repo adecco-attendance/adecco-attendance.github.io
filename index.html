@@ -23,6 +23,16 @@
   <!-- 로딩 -->
   <div id="loading-view" class="center-view"><div class="spinner"></div></div>
 
+  <!-- 출퇴근 처리 중 (전체 화면) -->
+  <div id="busy-overlay" class="busy-overlay" role="alertdialog" aria-live="assertive" aria-labelledby="busy-title" hidden>
+    <div class="busy-box">
+      <div class="spinner"></div>
+      <strong id="busy-title">출근 처리 중</strong>
+      <p id="busy-text">잠시만 기다려 주세요.</p>
+      <p id="busy-sec" class="muted small"></p>
+    </div>
+  </div>
+
   <!-- 로그인 -->
   <main id="login-view" class="center-view" hidden>
     <form id="login-form" class="card login-card">
