@@ -260,6 +260,8 @@
         $('busy-text').dataset.retry = '1';
         $('busy-text').textContent = '내 정보를 불러오는 중입니다...';
         $('login-pw').value = '';
+        // 이중 로그인 방지: 같은 아이디로 로그인되어 있던 다른 기기를 끊음 (매니저는 서버에서 예외 처리)
+        try { await sb.rpc('claim_single_session'); } catch (_) { /* 실패해도 로그인은 계속 */ }
         await enterApp(data.user);
       }
     } finally {
@@ -287,7 +289,7 @@
     stopGps();
     hideBusy();
     showView('login');
-    showError($('login-error'), msg || '관리자에 의해 로그아웃되었습니다.\n다시 로그인해 주세요.');
+    showError($('login-error'), msg || '다른 기기에서 로그인이 확인되어 로그아웃되었습니다.\n다시 로그인해 주세요.');
   }
   async function checkSession() {
     if (!me || sessionChecking || document.hidden) return;

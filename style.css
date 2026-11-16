@@ -103,7 +103,8 @@ input:focus, select:focus { outline: 2px solid rgba(47, 111, 237, .35); border-c
 .badge.done { background: #e8effd; color: var(--primary); }
 .clock-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .msg { margin: 0; font-size: 14px; white-space: pre-line; }
-#login-error { white-space: pre-line; }
+#login-error { white-space: pre-line; text-align: center; }
+.login-help { margin: 0; text-align: center; }
 .msg.ok { color: var(--ok); }
 .msg.err { color: var(--danger); }
 
