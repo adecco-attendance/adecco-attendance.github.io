@@ -141,6 +141,7 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 .time-input { width: 105px; }
 .head-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 .hire-input { width: 140px; }
+.name-search { width: 120px; }
 
 /* 직원 일괄 등록 */
 .file-btn { display: inline-flex; align-items: center; color: #fff; font-size: inherit; }

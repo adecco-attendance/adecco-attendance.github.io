@@ -166,6 +166,9 @@
           <label>직원
             <select id="p-user"><option value="">전체</option></select>
           </label>
+          <label>이름 검색
+            <input type="search" id="p-search" class="name-search" placeholder="이름" autocomplete="off">
+          </label>
           <button type="submit" class="btn primary">조회</button>
         </form>
         <div class="table-wrap">
@@ -192,6 +195,9 @@
           </label>
           <label>직원
             <select id="d-user"><option value="">전체</option></select>
+          </label>
+          <label>이름 검색
+            <input type="search" id="d-search" class="name-search" placeholder="이름" autocomplete="off">
           </label>
           <button type="submit" class="btn primary">조회</button>
           <button type="button" class="btn" id="add-record-btn">기록 추가</button>
@@ -220,6 +226,9 @@
           </label>
           <label>직원
             <select id="o-user"><option value="">전체</option></select>
+          </label>
+          <label>이름 검색
+            <input type="search" id="o-search" class="name-search" placeholder="이름" autocomplete="off">
           </label>
           <label>상태
             <select id="o-status">
@@ -303,10 +312,16 @@
           <label>지점
             <select id="s-branch"></select>
           </label>
+          <label>검색
+            <input type="search" id="s-search" placeholder="이름 또는 아이디" autocomplete="off" spellcheck="false">
+          </label>
+          <span class="spacer"></span>
+          <button type="button" class="btn danger-outline" id="s-logout-sel" disabled>선택한 직원 로그아웃</button>
+          <button type="button" class="btn danger-outline" id="s-logout-all">전체 로그아웃</button>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>이름</th><th>소속 지점</th><th>입사일</th><th>아이디</th><th>상태</th><th>최근 로그인</th><th>권한</th><th>관리</th></tr></thead>
+            <thead><tr><th><input type="checkbox" id="s-check-all" title="보이는 직원 모두 선택"></th><th>이름</th><th>소속 지점</th><th>입사일</th><th>아이디</th><th>상태</th><th>접속</th><th>최근 로그인</th><th>권한</th><th>관리</th></tr></thead>
             <tbody id="staff-list"></tbody>
           </table>
         </div>

@@ -213,6 +213,7 @@
       ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 지점만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
     switchTab('employee');
     showView('app');
+    checkSession();
     startGps();
     refreshToday();
     setupOvertimeForm();
@@ -276,6 +277,30 @@
     showView('login');
   });
 
+  // ---- 강제 로그아웃 확인: 매니저가 이 기기의 로그인을 끊었으면 로그인 화면으로 ----
+  //  1분마다(화면이 보일 때만) + 앱을 다시 열 때 확인. 통신 오류일 때는 그냥 넘어감
+  const SESSION_CHECK_MS = 60 * 1000;
+  let sessionChecking = false;
+  async function kickedOut(msg) {
+    await sb.auth.signOut({ scope: 'local' });
+    me = null;
+    stopGps();
+    hideBusy();
+    showView('login');
+    showError($('login-error'), msg || '관리자에 의해 로그아웃되었습니다.\n다시 로그인해 주세요.');
+  }
+  async function checkSession() {
+    if (!me || sessionChecking || document.hidden) return;
+    sessionChecking = true;
+    try {
+      const { data, error } = await sb.rpc('session_valid');
+      if (!error && data === false && me) await kickedOut();
+    } catch (_) { /* 통신 오류는 다음 확인 때 다시 */ }
+    finally { sessionChecking = false; }
+  }
+  setInterval(checkSession, SESSION_CHECK_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkSession(); });
+
   sb.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') { me = null; showView('login'); }
   });
@@ -309,6 +334,7 @@
       renderStaff();
       Promise.all([loadBranches(), loadStaff()]).then(later('staff-list', renderStaff)); // 빠른 DB 조회
       loadAuthStatus().then(later('staff-list', renderStaff)); // 계정 상태(Edge Function)는 느려서 따로
+      loadSessions().then(later('staff-list', renderStaff)); // 로그인 중인 기기 수
     }
     if (sub === 'branches') {
       renderBranches();
@@ -523,6 +549,8 @@
       const t = data ? (fn === 'clock_in' ? data.clock_in : data.clock_out)
         : (fn === 'clock_in' ? todayRow?.clock_in : todayRow?.clock_out);
       setMsg(`${label} 완료${t ? ` (${hm(t)})` : ''}`, 'ok');
+    } else if (/로그아웃된 기기/.test(error?.message || '')) {
+      return kickedOut();
     } else {
       setMsg(retryable({ error }) ? `${label}이 처리되지 않았습니다.\n인터넷 연결을 확인한 뒤 다시 눌러 주세요.` : errMsg(error), 'err');
     }
@@ -791,6 +819,21 @@
     $(`${prefix}-to`).value = to;
   }
 
+  // 이름 검색 (개인별 p · 일자별 d · 초과근무 o): 이름 일부만 입력해도 됨, 엑셀 다운로드에도 반영
+  const nameQ = (prefix) => ($(`${prefix}-search`)?.value || '').trim().toLowerCase();
+  const nameHit = (prefix, name) => { const q = nameQ(prefix); return !q || String(name || '').toLowerCase().includes(q); };
+  const searchTimers = {};
+  ['p', 'd', 'o'].forEach((prefix) => {
+    $(`${prefix}-search`).addEventListener('input', () => {
+      clearTimeout(searchTimers[prefix]);
+      searchTimers[prefix] = setTimeout(() => {
+        if (prefix === 'p') renderStaffSummary();
+        else if (prefix === 'd') loadDaily(true);
+        else loadOvertimeAdmin(true);
+      }, 300);
+    });
+  });
+
   $('o-status').addEventListener('change', () => loadOvertimeAdmin());
   ['p', 'd', 'o'].forEach((prefix) => {
     $(`${prefix}-branch`).addEventListener('change', () => { fillUserSelect(prefix); loaders[prefix](); });
@@ -935,10 +978,10 @@
     if (seq !== dailySeq) return;
     const error = att.error || ot.error;
     if (error) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
-    const data = att.data;
+    const data = att.data.filter((r) => nameHit('d', r.profile?.name));
     dailyRows = data;
     dailyOt = ot.data;
-    if (!data.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">기록이 없습니다.</td></tr>'; $('admin-summary').textContent = ''; return; }
+    if (!data.length) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${nameQ('d') ? `"${esc(nameQ('d'))}" 이름의 기록이 없습니다.` : '기록이 없습니다.'}</td></tr>`; $('admin-summary').textContent = ''; return; }
     const workMs = (r) => regularMs(r) + approvedOtMsForRow(r, dailyOt);
 
     // 날짜별 그룹 (data는 날짜 내림차순, 같은 날은 출근 빠른 순)
@@ -1002,6 +1045,7 @@
       if (r.updated_at) e.edited += 1;
     });
     return [...map.values()]
+      .filter((e) => nameHit('p', e.name))
       .map((e) => ({
         ...e,
         branchLabel: e.branches.size ? [...e.branches].join(', ') : branchName(e.homeBranch),
@@ -1074,7 +1118,7 @@
     rows.forEach((r) => {
       if (!people.has(r.user_id)) people.set(r.user_id, staff.find((s) => s.id === r.user_id) || { id: r.user_id, name: r.profile?.name || '(알 수 없음)', branch_id: r.branch_id });
     });
-    const list = [...people.values()].sort((a, b) => branchName(a.branch_id).localeCompare(branchName(b.branch_id), 'ko') || a.name.localeCompare(b.name, 'ko'));
+    const list = [...people.values()].filter((p) => nameHit(prefix, p.name)).sort((a, b) => branchName(a.branch_id).localeCompare(branchName(b.branch_id), 'ko') || a.name.localeCompare(b.name, 'ko'));
     if (!list.length) return alert('해당 직원이 없습니다. 조건을 확인하고 [조회]를 누르세요.');
     const rec = new Map(rows.map((r) => [`${r.user_id}|${r.work_date}`, r]));
     const otOf = (r) => (r && r.clock_out ? approvedOtMsForRow(r, otReqs) : 0);
@@ -1272,10 +1316,10 @@
     if (seq !== otSeq) return;
     const error = ot.error || att.error;
     if (error) { tbody.innerHTML = `<tr><td colspan="10" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
-    otRows = ot.data;
+    otRows = ot.data.filter((q) => nameHit('o', q.profile?.name));
     otAtt = att.data;
     loadOtBadge();
-    if (!otRows.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty">신청 내역이 없습니다.</td></tr>'; $('ot-summary').textContent = ''; return; }
+    if (!otRows.length) { tbody.innerHTML = `<tr><td colspan="10" class="empty">${nameQ('o') ? `"${esc(nameQ('o'))}" 이름의 신청 내역이 없습니다.` : '신청 내역이 없습니다.'}</td></tr>`; $('ot-summary').textContent = ''; return; }
 
     // 그 근무일의 실제 출퇴근 (해당 직원)
     const actualOf = (q) => otAtt.find((a) => a.user_id === q.user_id && a.work_date === q.work_date);
@@ -1367,7 +1411,9 @@
     $('na-branch').value = curNa;
     const statusKnown = authStatus.size > 0;
     // 삭제(퇴사) 처리된 직원은 [퇴사자 관리]에서 따로 관리
-    const list = staff.filter((s) => matchBranch(s.branch_id, fb) && !s.deleted_at)
+    const q = $('s-search').value.trim().toLowerCase();
+    const hit = (s) => !q || s.name.toLowerCase().includes(q) || loginIdOf(s.email).toLowerCase().includes(q);
+    const list = staff.filter((s) => matchBranch(s.branch_id, fb) && !s.deleted_at && hit(s))
       .sort((a, b) => (isActive(b.id) - isActive(a.id)) || a.name.localeCompare(b.name, 'ko'));
     $('staff-list').innerHTML = list.map((s) => {
       const st = authStatus.get(s.id);
@@ -1376,11 +1422,13 @@
       const last = st?.last_sign_in_at ? `${ymd(st.last_sign_in_at)} ${hm(st.last_sign_in_at)}` : (statusKnown ? '없음' : '-');
       return `
       <tr data-id="${s.id}" class="${active ? '' : 'inactive'}">
+        <td>${self ? '' : `<input type="checkbox" class="s-check" ${staffChecked.has(s.id) ? 'checked' : ''}>`}</td>
         <td><input type="text" value="${esc(s.name)}" maxlength="30" data-field="name"></td>
         <td><select data-field="branch_id">${branchOptions({ current: s.branch_id, onlyActive: true })}</select></td>
         <td><input type="date" value="${esc(s.hire_date || '')}" data-field="hire_date" class="hire-input"></td>
         <td>${esc(loginIdOf(s.email))}</td>
         <td>${statusKnown ? (active ? '<span class="status-on">사용 중</span>' : '<span class="status-off">비활성</span>') : '-'}</td>
+        <td>${sessionInfo(s.id)}</td>
         <td class="edited">${last}</td>
         <td><select data-field="role" ${self ? 'disabled title="본인의 권한은 바꿀 수 없습니다"' : ''}>${roleOptions(roleOf(s))}</select></td>
         <td class="actions">
@@ -1390,8 +1438,68 @@
           ${!self && statusKnown && !active ? '<button class="btn small danger-outline" data-delete>삭제</button>' : ''}
         </td>
       </tr>`;
-    }).join('') || '<tr><td colspan="8" class="empty">직원이 없습니다.</td></tr>';
+    }).join('') || `<tr><td colspan="10" class="empty">${q ? `"${esc(q)}"에 해당하는 직원이 없습니다.` : '직원이 없습니다.'}</td></tr>`;
+    updateLogoutButtons();
   }
+
+  // ---- 로그인 중인 기기 수 / 강제 로그아웃 (매니저) ----
+  let sessionMap = new Map(); // user_id -> { sessions, last_active }
+  const staffChecked = new Set();
+  function sessionInfo(id) {
+    if (!sessionMap.loaded) return '-';
+    const s = sessionMap.get(id);
+    return s ? `<span class="status-on">로그인 ${s.sessions}대</span>` : '<span class="muted">-</span>';
+  }
+  async function loadSessions() {
+    if (!me?.is_admin) return;
+    const { data, error } = await sb.rpc('session_counts');
+    if (error) return;
+    sessionMap = new Map(data.map((r) => [r.user_id, r]));
+    sessionMap.loaded = true;
+  }
+  function visibleStaffIds() {
+    return [...$('staff-list').querySelectorAll('.s-check')].map((c) => c.closest('tr').dataset.id);
+  }
+  function updateLogoutButtons() {
+    [...staffChecked].forEach((id) => { if (!staff.some((s) => s.id === id && !s.deleted_at)) staffChecked.delete(id); });
+    const btn = $('s-logout-sel');
+    btn.disabled = !staffChecked.size;
+    btn.textContent = staffChecked.size ? `선택한 직원 로그아웃 (${staffChecked.size}명)` : '선택한 직원 로그아웃';
+    const vis = visibleStaffIds();
+    const all = $('s-check-all');
+    all.checked = vis.length > 0 && vis.every((id) => staffChecked.has(id));
+    all.indeterminate = !all.checked && vis.some((id) => staffChecked.has(id));
+  }
+  $('staff-list').addEventListener('change', (e) => {
+    if (!e.target.matches('.s-check')) return;
+    const id = e.target.closest('tr').dataset.id;
+    if (e.target.checked) staffChecked.add(id); else staffChecked.delete(id);
+    updateLogoutButtons();
+  });
+  $('s-search').addEventListener('input', () => renderStaff());
+  $('s-check-all').addEventListener('change', (e) => {
+    visibleStaffIds().forEach((id) => { if (e.target.checked) staffChecked.add(id); else staffChecked.delete(id); });
+    renderStaff();
+  });
+  async function forceLogout(ids, label) {
+    const { data, error } = await sb.rpc('force_logout', { p_user_ids: ids });
+    if (error) return alert(errMsg(error));
+    alert(`${label}\n로그인 ${data}건을 끊었습니다. 해당 기기는 1분 안에 로그인 화면으로 바뀌고, 출근·퇴근은 바로 막힙니다.`);
+    staffChecked.clear();
+    await loadSessions();
+    renderStaff();
+  }
+  $('s-logout-sel').addEventListener('click', () => {
+    const names = staff.filter((s) => staffChecked.has(s.id)).map((s) => s.name);
+    if (!names.length) return;
+    const shown = names.length > 10 ? `${names.slice(0, 10).join(', ')} 외 ${names.length - 10}명` : names.join(', ');
+    if (!confirm(`선택한 ${names.length}명을 모든 기기에서 로그아웃시킵니다.\n(${shown})\n\n계속할까요?`)) return;
+    forceLogout([...staffChecked], `${names.length}명을 로그아웃시켰습니다.`);
+  });
+  $('s-logout-all').addEventListener('click', () => {
+    if (!confirm('본인을 뺀 모든 직원을 모든 기기에서 로그아웃시킵니다.\n직원들은 다시 로그인해야 합니다.\n\n계속할까요?')) return;
+    forceLogout(null, '본인을 뺀 전체 직원을 로그아웃시켰습니다.');
+  });
 
   // 아이디는 항상 소문자로 저장되므로 입력하는 즉시 소문자로 바꿔서 보여줌
   $('na-id').addEventListener('input', (e) => {
