@@ -37,7 +37,9 @@ code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; }
 
 /* 레이아웃 */
 .center-view { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.container { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+.container { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+/* 넓은 표 때문에 화면 전체가 넓어지지 않도록 (표는 카드 안에서 옆으로 밀어서 봄) */
+.container > *, .card { min-width: 0; }
 .card { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: 0 1px 3px rgba(20, 30, 60, .08); }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 
@@ -82,7 +84,8 @@ input:focus, select:focus { outline: 2px solid rgba(47, 111, 237, .35); border-c
 }
 .tab.active, .subtab.active { background: #e8effd; color: var(--primary); font-weight: 600; }
 .user-menu { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 14px; }
-.subtabs { display: flex; gap: 4px; }
+.subtabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab, .subtab { white-space: nowrap; }
 
 /* 출퇴근 카드 */
 .clock-card { text-align: center; display: grid; gap: 14px; }
