@@ -372,6 +372,9 @@
             <tbody id="branch-list"></tbody>
           </table>
         </div>
+
+        <p class="muted small"><b>특정일 근무시간</b>: 평소와 다르게 근무하는 날(예: 평소 09:00~18:00인데 그날만 14:00~18:00)은 '정규 근무시간' 칸의 <b>[+ 특정일]</b>로 등록하세요. 그 날짜만 이 시간으로 정규 근무·초과근무를 계산합니다. 등록한 날은 칸 아래에 표시되고, ✕로 지울 수 있습니다.</p>
+
         <div class="help-box">
           <b>지점 위치 등록 방법 (GPS 출퇴근)</b>
           <ol>
@@ -445,6 +448,26 @@
   </dialog>
 
   <!-- (매니저) 지점 위치 지도에서 선택 -->
+  <dialog id="sh-dialog">
+    <form id="sh-form" method="dialog" class="dialog-body" autocomplete="off">
+      <h3 id="sh-title">특정일 근무시간</h3>
+      <p class="muted small" id="sh-usual" style="margin:0"></p>
+      <label>날짜 <input type="date" id="sh-date" required></label>
+      <div class="sh-times">
+        <label>시작 <input type="time" id="sh-start" required value="14:00"></label>
+        <label>종료 <input type="time" id="sh-end" required value="18:00"></label>
+      </div>
+      <label>메모 (선택) <input type="text" id="sh-note" maxlength="50" placeholder="예) 재고 조사로 단축 근무"></label>
+      <p class="muted small" style="margin:0">같은 날짜로 다시 등록하면 시간이 바뀝니다.</p>
+      <p id="sh-error" class="error" hidden></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="sh-cancel">취소</button>
+        <button type="submit" class="btn primary">등록</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="map-dialog" class="map-dialog">
     <div class="dialog-body">
       <h3 id="map-title">지점 위치 선택</h3>

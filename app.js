@@ -54,14 +54,29 @@
   const overlapMs = (s1, e1, s2, e2) => Math.max(0, Math.min(e1, e2) - Math.max(s1, s2));
   const tmLabel = (t) => (t ? String(t).slice(0, 5) : '');
 
-  // 정규 근무시간: 기록 당시 지점의 정규시간 안에서 실제로 근무한 시간 (지점 정보 없으면 실제 전체)
+  // 지점별 특정일 근무시간 (branch_special_hours): `${branch_id}|${날짜}` → { work_start, work_end, note }
+  let specialHours = new Map();
+  async function loadSpecialHours() {
+    const since = shiftDate(ymd(new Date()), -400);
+    const { data, error } = await fetchAll(() => sb.from('branch_special_hours').select('*').gte('work_date', since).order('work_date').order('id'));
+    if (error) return;
+    specialHours = new Map(data.map((h) => [`${h.branch_id}|${h.work_date}`, h]));
+  }
+  // 그 날짜의 지점 정규 근무시간 (특정일이 있으면 그 시간). b: 지점 정보(평소 시간)
+  function hoursFor(branchId, date, b) {
+    const sp = branchId != null ? specialHours.get(`${branchId}|${date}`) : null;
+    if (sp) return { start: sp.work_start, end: sp.work_end, special: true, note: sp.note || '' };
+    return { start: b?.work_start || null, end: b?.work_end || null, special: false, note: '' };
+  }
+
+  // 정규 근무시간: 기록 당시 지점의 정규시간(그날 특정일 시간 우선) 안에서 실제로 근무한 시간 (지점 정보 없으면 실제 전체)
   function regularMs(row) {
     if (!row.clock_in || !row.clock_out) return 0;
     const s = +new Date(row.clock_in);
     const e = +new Date(row.clock_out);
-    const b = row.branch;
-    if (!b || !b.work_start || !b.work_end) return e - s;
-    return overlapMs(s, e, kstAt(row.work_date, b.work_start), kstAt(row.work_date, b.work_end));
+    const h = hoursFor(row.branch_id, row.work_date, row.branch);
+    if (!h.start || !h.end) return e - s;
+    return overlapMs(s, e, kstAt(row.work_date, h.start), kstAt(row.work_date, h.end));
   }
   // 이 출근 기록과 겹치는 승인 초과근무 시간
   function approvedOtMsForRow(row, reqs) {
@@ -227,6 +242,7 @@
     $('manager-note').hidden = me.is_admin || !isManager();
     $('manager-note').textContent = isManager() && !me.is_admin
       ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 지점만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
+    await loadSpecialHours(); // 특정일 근무시간 (정규 근무 계산에 필요)
     switchTab('employee');
     showView('app');
     checkSession();
@@ -356,7 +372,7 @@
     }
     if (sub === 'branches') {
       renderBranches();
-      Promise.all([loadBranches(), loadStaff()]).then(later('branch-list', renderBranches));
+      Promise.all([loadBranches(), loadStaff(), loadSpecialHours()]).then(later('branch-list', renderBranches));
     }
     if (sub === 'retired') {
       renderRetired();
@@ -638,15 +654,19 @@
   // 정규 근무시간 안내 + 신청 기본값(정규 퇴근 ~ +2시간)
   function setupOvertimeForm() {
     const b = me?.branch;
-    const ws = tmLabel(b?.work_start);
-    const we = tmLabel(b?.work_end);
+    const today = ymd(new Date());
+    const hrs = hoursFor(me?.branch_id, today, b);
+    const ws = tmLabel(hrs.start);
+    const we = tmLabel(hrs.end);
     $('work-hours').hidden = !we;
-    $('work-hours').textContent = we ? `정규 근무시간 ${ws} ~ ${we} (${b.name})` : '';
-    $('ot-date').value = ymd(new Date());
+    $('work-hours').textContent = !we ? ''
+      : hrs.special ? `오늘은 특정일 근무시간 ${ws} ~ ${we}${hrs.note ? ` (${hrs.note})` : ''} · 평소 ${tmLabel(b?.work_start)} ~ ${tmLabel(b?.work_end)} (${b?.name || ''})`
+        : `정규 근무시간 ${ws} ~ ${we} (${b.name})`;
+    $('ot-date').value = today;
     $('ot-start').value = we || '18:00';
     const [h, m] = ($('ot-start').value).split(':').map(Number);
     $('ot-end').value = `${String((h + 2) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    $('ot-help').textContent = we ? `정규 퇴근시간(${we}) 이후부터 신청할 수 있습니다.` : '';
+    $('ot-help').textContent = we ? `정규 근무시간(${ws} ~ ${we}) 밖에서만 신청할 수 있습니다.` : '';
     $('ot-help').hidden = !we;
   }
 
@@ -661,10 +681,11 @@
     const start = new Date(`${date}T${$('ot-start').value}:00+09:00`);
     let end = new Date(`${date}T${$('ot-end').value}:00+09:00`);
     if (end <= start) end = new Date(end.getTime() + 24 * 3600 * 1000); // 자정 넘김
-    const we = me?.branch?.work_end;
-    const ws = me?.branch?.work_start;
+    const hrs = hoursFor(me?.branch_id, date, me?.branch);
+    const we = hrs.end;
+    const ws = hrs.start;
     if (we && ws && start < kstAt(date, we) && end > kstAt(date, ws)) {
-      return showOtMsg(`정규 근무시간(${tmLabel(ws)} ~ ${tmLabel(we)})과 겹칩니다. 정규 퇴근시간(${tmLabel(we)}) 이후부터 신청하세요.`, 'err');
+      return showOtMsg(`${hrs.special ? '이 날은 특정일 근무시간' : '정규 근무시간'}(${tmLabel(ws)} ~ ${tmLabel(we)})과 겹칩니다. 정규 근무시간 밖에서만 신청할 수 있습니다.`, 'err');
     }
     const btn = e.submitter; btn.disabled = true;
     const { error } = await sb.rpc('request_overtime', {
@@ -1120,7 +1141,7 @@
     let att; let otRes;
     try {
       await loadXlsx();
-      [att, otRes] = await Promise.all([fetchRecords(prefix), fetchApprovedOt(prefix)]);
+      [att, otRes] = await Promise.all([fetchRecords(prefix), fetchApprovedOt(prefix), loadSpecialHours()]);
     } catch (e) { alert(e.message); return; }
     finally { btn.disabled = false; btn.textContent = label; }
     if (att.error || otRes.error) return alert(errMsg(att.error || otRes.error));
@@ -1218,14 +1239,16 @@
         const r = rec.get(`${p.id}|${d}`);
         if (!r) { detail.push([p.name, branchName(p.branch_id), d, wdOf(d), '', '', '', '', '', '', '', '', '', '']); return; }
         const b = r.branch || branches.find((x) => x.id === r.branch_id);
+        const hrs = hoursFor(r.branch_id, d, b);
         const brk = breakMs(regularMs(r));
         const reg = workRegMs(r);
         const ot = otOf(r);
         const extra = r.clock_out ? unapprovedMsForRow(r, otReqs) : 0;
-        detail.push([p.name, r.branch?.name || branchName(r.branch_id), d, wdOf(d), tmLabel(b?.work_start), tmLabel(b?.work_end),
+        const memo = [hrs.special ? `특정일 근무시간${hrs.note ? `(${hrs.note})` : ''}` : '', r.note || ''].filter(Boolean).join(' / ');
+        detail.push([p.name, r.branch?.name || branchName(r.branch_id), d, wdOf(d), tmLabel(hrs.start), tmLabel(hrs.end),
           hm(r.clock_in), r.clock_out ? hm(r.clock_out) : '미퇴근',
           r.clock_out ? hmDur(brk) : '', r.clock_out ? hmDur(reg) : '', r.clock_out ? hmDur(ot) : '', r.clock_out ? hmDur(reg + ot) : '',
-          extra >= UNAPPROVED_SHOW_MS ? hmDur(extra) : '', r.note || '']);
+          extra >= UNAPPROVED_SHOW_MS ? hmDur(extra) : '', memo]);
       });
     });
     const ws2 = makeSheet(X, detail, {});
@@ -2218,13 +2241,67 @@
     return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
   }
 
+  // ---- 특정일 근무시간 (매니저: 지점 표의 '정규 근무시간' 칸에서 등록·삭제) ----
+  // 지점 칸 아래 표시: 오늘 이후 등록된 날짜 (많으면 5개까지 + 외 N건)
+  function specialChips(branchId) {
+    const today = ymd(new Date());
+    const list = [...specialHours.values()].filter((h) => h.branch_id === branchId && h.work_date >= today)
+      .sort((a, b) => a.work_date.localeCompare(b.work_date));
+    const shown = list.slice(0, 5).map((h) => `<span class="sh-chip" title="${esc(h.note || '')}">
+        ${dateLabel(h.work_date)} ${tmLabel(h.work_start)}~${tmLabel(h.work_end)}${h.note ? ` · ${esc(h.note)}` : ''}
+        <button type="button" class="sh-x" data-sh-del="${h.id}" title="삭제" aria-label="삭제">✕</button></span>`).join('');
+    return shown + (list.length > 5 ? `<span class="muted small">외 ${list.length - 5}건</span>` : '');
+  }
+  let shBranch = null;
+  function openSpecialDialog(b) {
+    shBranch = b;
+    $('sh-title').textContent = `특정일 근무시간 - ${b.name}`;
+    $('sh-usual').textContent = `평소 근무시간 ${tmLabel(b.work_start) || '09:00'} ~ ${tmLabel(b.work_end) || '18:00'}`;
+    $('sh-date').value = ymd(new Date());
+    $('sh-start').value = '14:00';
+    $('sh-end').value = tmLabel(b.work_end) || '18:00';
+    $('sh-note').value = '';
+    showError($('sh-error'), '');
+    $('sh-dialog').showModal();
+  }
+  $('sh-cancel').addEventListener('click', () => $('sh-dialog').close());
+  $('sh-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!shBranch) return;
+    const row = {
+      branch_id: shBranch.id,
+      work_date: $('sh-date').value,
+      work_start: $('sh-start').value,
+      work_end: $('sh-end').value,
+      note: $('sh-note').value.trim() || null,
+    };
+    if (!row.work_date) return showError($('sh-error'), '날짜를 선택하세요.');
+    if (row.work_end <= row.work_start) return showError($('sh-error'), '종료 시각이 시작 시각보다 늦어야 합니다.');
+    const btn = e.submitter; btn.disabled = true;
+    const { error } = await sb.from('branch_special_hours').upsert(row, { onConflict: 'branch_id,work_date' });
+    btn.disabled = false;
+    if (error) return showError($('sh-error'), errMsg(error));
+    $('sh-dialog').close();
+    await loadSpecialHours();
+    renderBranches();
+  });
+  async function deleteSpecial(id) {
+    const h = [...specialHours.values()].find((x) => x.id === id);
+    if (!h || !confirm(`${branchName(h.branch_id)} ${dateLabel(h.work_date)}의 특정일 근무시간(${tmLabel(h.work_start)}~${tmLabel(h.work_end)})을 삭제할까요?\n삭제하면 그날은 평소 근무시간으로 계산됩니다.`)) return;
+    const { error } = await sb.from('branch_special_hours').delete().eq('id', id);
+    if (error) return alert(errMsg(error));
+    await loadSpecialHours();
+    renderBranches();
+  }
+
   function renderBranches() {
     $('branch-list').innerHTML = branches.map((b) => `
       <tr data-id="${b.id}">
         <td><input type="text" value="${esc(b.name)}" maxlength="30" data-field="name"></td>
-        <td>
+        <td class="hours-cell">
           <input type="time" class="time-input" value="${tmLabel(b.work_start) || '09:00'}" data-field="work_start"> ~
           <input type="time" class="time-input" value="${tmLabel(b.work_end) || '18:00'}" data-field="work_end">
+          <div class="sh-chips">${specialChips(b.id)}<button type="button" class="btn small sh-add" data-sh-add>+ 특정일</button></div>
         </td>
         <td class="loc-cell">
           <div class="addr-row">
@@ -2260,6 +2337,12 @@
     const tr = e.target.closest('tr[data-id]');
     if (!tr) return;
     const id = Number(tr.dataset.id);
+    if (e.target.matches('[data-sh-add]')) {
+      const b = branches.find((x) => x.id === id);
+      if (b) openSpecialDialog(b);
+      return;
+    }
+    if (e.target.matches('[data-sh-del]')) return deleteSpecial(Number(e.target.dataset.shDel));
     if (e.target.matches('[data-bsave]')) {
       const name = tr.querySelector('[data-field="name"]').value.trim();
       if (!name) return alert('지점 이름을 입력하세요.');

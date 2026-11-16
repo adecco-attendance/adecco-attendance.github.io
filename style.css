@@ -140,6 +140,18 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 .tag-warn { display: block; font-size: 12px; color: var(--warn); }
 .ot-badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
 .time-input { width: 105px; }
+/* 특정일 근무시간 (지점 표 '정규 근무시간' 칸) */
+.hours-cell { min-width: 250px; }
+.sh-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: center; }
+.sh-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; background: #fff4d6; color: #7a5200; border-radius: 999px; padding: 2px 4px 2px 9px; white-space: nowrap; }
+.sh-x { border: 0; background: transparent; color: #a07000; cursor: pointer; font-size: 12px; padding: 0 4px; line-height: 1; }
+.sh-x:hover { color: var(--danger); }
+.btn.sh-add { padding: 2px 9px; font-size: 12px; color: var(--primary); border-color: #c9d8f5; }
+.sh-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 600px) {
+  table.stack td.hours-cell { min-width: 0; }
+  table.stack td.hours-cell .sh-chips { justify-content: flex-end; }
+}
 .head-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 .hire-input { width: 140px; }
 .name-search { width: 120px; }
