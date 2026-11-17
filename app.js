@@ -810,6 +810,10 @@
     const sup = b?.support ? `오늘은 ${b.name} 지원 근무입니다${b.support.note ? ` (${b.support.note})` : ''}.` : '';
     const spc = hrs.special ? `오늘은 특정일 근무시간 ${ws} ~ ${we}입니다${hrs.note ? ` (${hrs.note})` : ''}.` : '';
     const note = [sup, spc].filter(Boolean).join('\n');
+    // 출퇴근 화면 맨 위: 이름 + 오늘 근무 지점 (지원 근무면 '지원' 표시)
+    $('me-name').textContent = me?.name ? `${me.name}님` : '';
+    $('me-branch').textContent = b?.name ? (b.support ? `${b.name} (지원)` : b.name) : '';
+    $('me-branch').hidden = !b?.name;
     $('work-hours').hidden = !note;
     $('work-hours').textContent = note;
     $('work-hours').classList.toggle('support-note', !!note);

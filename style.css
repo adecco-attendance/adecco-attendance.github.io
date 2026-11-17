@@ -92,6 +92,9 @@ input:focus, select:focus { outline: 2px solid rgba(47, 111, 237, .35); border-c
 
 /* 출퇴근 카드 */
 .clock-card { text-align: center; display: grid; gap: 14px; }
+.me-line { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 17px; }
+.me-line strong:empty, .me-line span:empty { display: none; }
+#me-branch { background: #eaf1ff; color: #2563eb; font-size: 14px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
 .now-date { color: var(--muted); }
 .now-time { font-size: 44px; font-weight: 700; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
 .status-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
