@@ -760,7 +760,7 @@
     const [from, to] = monthRange($('my-month').value);
     const [att, ot] = await Promise.all([
       sb.from('attendance')
-        .select('*, branch:branches(name, work_start, work_end)').eq('user_id', me.id)
+        .select('*, branch:branches!attendance_branch_id_fkey(name, work_start, work_end)').eq('user_id', me.id)
         .gte('work_date', from).lte('work_date', to)
         .order('work_date', { ascending: false }),
       sb.from('overtime_requests').select('*').eq('user_id', me.id).eq('status', 'approved')
@@ -1259,7 +1259,7 @@
     const to = $(`${prefix}-to`).value;
     return fetchAll(() => {
       let q = sb.from('attendance')
-        .select('*, branch:branches(name, work_start, work_end), profile:profiles!attendance_user_id_fkey(name), editor:profiles!attendance_updated_by_fkey(name)')
+        .select('*, branch:branches!attendance_branch_id_fkey(name, work_start, work_end), profile:profiles!attendance_user_id_fkey(name), editor:profiles!attendance_updated_by_fkey(name)')
         .gte('work_date', from).lte('work_date', to)
         .order('work_date', { ascending: false }).order('clock_in', { ascending: true }).order('id');
       if (fb === 'none') q = q.is('branch_id', null);
