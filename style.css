@@ -148,6 +148,31 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 .sh-x:hover { color: var(--danger); }
 .btn.sh-add { padding: 2px 9px; font-size: 12px; color: var(--primary); border-color: #c9d8f5; }
 .sh-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* 공지사항 */
+.notice-list { display: grid; gap: 8px; }
+.notice { border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; }
+.notice.pinned { border-color: #f0d48a; background: #fffcf2; }
+.notice-head { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; color: var(--text); }
+.notice-head:hover { background: #f6f8fb; }
+.notice.pinned .notice-head:hover { background: #fff7df; }
+.notice-title { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.notice-meta { color: var(--muted); font-size: 13px; }
+.notice .pin { font-size: 12px; color: #8a5a00; background: #fff4d6; border-radius: 999px; padding: 1px 8px; }
+.notice .new { font-size: 11px; font-weight: 700; color: #fff; background: var(--danger); border-radius: 999px; padding: 1px 7px; }
+.notice-body { padding: 0 14px 12px; white-space: pre-line; line-height: 1.7; border-top: 1px dashed var(--line); padding-top: 12px; margin: 0 0 4px; }
+.notice-edited { margin: 0 14px 8px; }
+.notice-admin { display: flex; align-items: center; gap: 6px; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
+.empty-note { text-align: center; padding: 24px 0; margin: 0; }
+dialog.notice-dialog { width: min(560px, calc(100vw - 32px)); }
+#notice-body { font: inherit; color: var(--text); padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; resize: vertical; min-height: 160px; }
+
+/* 직원 분류 */
+.job-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.job-row .sh-chips { margin-top: 0; flex: 1 1 260px; }
+.job-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; background: #e8effd; color: var(--primary); border-radius: 999px; padding: 3px 4px 3px 11px; white-space: nowrap; }
+.job-chip .sh-x { color: #6b84c4; }
+.job-form { display: flex; gap: 6px; }
+.job-form input { width: 150px; }
 @media (max-width: 600px) {
   table.stack td.hours-cell { min-width: 0; }
   table.stack td.hours-cell .sh-chips { justify-content: flex-end; }

@@ -8,6 +8,11 @@
   const TZ = 'Asia/Seoul';
   const $ = (id) => document.getElementById(id);
 
+  // ⚠ 직원 분류(근무조/직무) 기능 스위치 — 아직 적용 보류 중 (DB에 job_groups 표·칸이 없음)
+  //   적용할 때: schema.sql 16절 마이그레이션 + manage-staff 배포 후 true 로 바꿈
+  const FEATURE_JOB_GROUPS = false;
+  if (!FEATURE_JOB_GROUPS) document.querySelectorAll('.feat-job').forEach((el) => { el.hidden = true; });
+
   if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes('YOUR-PROJECT')) {
     $('config-warning').hidden = false;
   }
@@ -198,7 +203,7 @@
 
   // 휴대폰에서 넓은 표를 카드 모양으로 보여 주기 위해, 각 칸에 제목(data-label)을 붙임 (표 내용이 바뀔 때마다 자동)
   function labelTable(table) {
-    const heads = [...(table.tHead?.rows[0]?.cells || [])].map((c) => c.textContent.trim());
+    const heads = [...(table.tHead?.rows[0]?.cells || [])].filter((c) => !c.hidden).map((c) => c.textContent.trim());
     [...table.tBodies[0].rows].forEach((tr) => {
       let i = 0;
       [...tr.cells].forEach((td) => {
@@ -243,6 +248,7 @@
     $('manager-note').textContent = isManager() && !me.is_admin
       ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 지점만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
     await loadSpecialHours(); // 특정일 근무시간 (정규 근무 계산에 필요)
+    loadNotices(); // 공지사항 (새 공지 수 표시)
     switchTab('employee');
     showView('app');
     checkSession();
@@ -345,9 +351,115 @@
   function switchTab(view) {
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
     $('employee-view').hidden = view !== 'employee';
+    $('notice-view').hidden = view !== 'notice';
     $('admin-view').hidden = view !== 'admin';
     if (view === 'admin') initAdmin();
+    if (view === 'notice') {
+      renderNotices();
+      // 매니저는 '읽음 N / 전체 M명'을 보려고 직원 수가 필요
+      Promise.all([loadNotices(), me?.is_admin && !staff.length ? loadStaff() : null]).then(renderNotices);
+    }
   }
+
+  // ---------------------------------------------------------------
+  //  공지사항: 매니저만 작성·수정·삭제, 모두 읽기. 펼쳐 보면 '읽음'으로 기록
+  // ---------------------------------------------------------------
+  let notices = [];
+  let noticeRead = new Set();   // 내가 읽은 공지 id
+  let noticeReaders = new Map(); // (매니저) 공지 id → 읽은 사람 수
+  const noticeOpen = new Set();  // 화면에서 펼친 공지
+  async function loadNotices() {
+    if (!me) return;
+    const [n, r, c] = await Promise.all([
+      sb.from('notices').select('*, author:profiles!notices_created_by_fkey(name)').order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(200),
+      sb.from('notice_reads').select('notice_id').eq('user_id', me.id),
+      me.is_admin ? sb.rpc('notice_read_counts') : Promise.resolve({ data: [] }),
+    ]);
+    if (n.error) return;
+    notices = n.data;
+    noticeRead = new Set((r.data || []).map((x) => x.notice_id));
+    notices.forEach((x) => { if (x.created_by === me.id) noticeRead.add(x.id); }); // 내가 쓴 공지는 읽은 것으로
+    noticeReaders = new Map((c.data || []).map((x) => [x.notice_id, x.readers]));
+    updateNoticeBadge();
+  }
+  function updateNoticeBadge() {
+    const unread = notices.filter((x) => !noticeRead.has(x.id)).length;
+    $('notice-badge').textContent = unread;
+    $('notice-badge').hidden = !unread;
+  }
+  const fmtDateTime = (d) => `${ymd(d)} ${hm(d)}`;
+  function renderNotices() {
+    $('notice-new').hidden = !me?.is_admin;
+    const total = staff.filter((s) => !s.deleted_at).length;
+    $('notice-list').innerHTML = notices.map((x) => {
+      const open = noticeOpen.has(x.id);
+      const isNew = !noticeRead.has(x.id);
+      const readers = noticeReaders.get(x.id) || 0;
+      return `<article class="notice ${x.pinned ? 'pinned' : ''} ${open ? 'open' : ''}" data-id="${x.id}">
+        <button type="button" class="notice-head" data-notice-toggle aria-expanded="${open}">
+          <span class="notice-title">${x.pinned ? '<span class="pin">📌 중요</span>' : ''}${isNew ? '<span class="new">NEW</span>' : ''}${esc(x.title)}</span>
+          <span class="notice-meta">${fmtDateTime(x.created_at)}${x.author?.name ? ` · ${esc(x.author.name)}` : ''}</span>
+        </button>
+        ${open ? `<div class="notice-body">${esc(x.body) || '<span class="muted">(내용 없음)</span>'}</div>
+          ${x.updated_at ? `<p class="muted small notice-edited">수정됨 ${fmtDateTime(x.updated_at)}</p>` : ''}
+          ${me?.is_admin ? `<div class="notice-admin">
+            <span class="muted small">읽음 ${readers}${total ? ` / ${total}명` : '명'}</span>
+            <span class="spacer"></span>
+            <button type="button" class="btn small" data-notice-edit>수정</button>
+            <button type="button" class="btn small danger-outline" data-notice-del>삭제</button>
+          </div>` : ''}` : ''}
+      </article>`;
+    }).join('') || '<p class="muted empty-note">등록된 공지사항이 없습니다.</p>';
+  }
+  $('notice-list').addEventListener('click', async (e) => {
+    const art = e.target.closest('.notice');
+    if (!art) return;
+    const x = notices.find((n) => n.id === Number(art.dataset.id));
+    if (!x) return;
+    if (e.target.closest('[data-notice-toggle]')) {
+      if (noticeOpen.has(x.id)) noticeOpen.delete(x.id); else noticeOpen.add(x.id);
+      if (!noticeRead.has(x.id)) {
+        noticeRead.add(x.id);
+        noticeReaders.set(x.id, (noticeReaders.get(x.id) || 0) + 1);
+        updateNoticeBadge();
+        sb.from('notice_reads').upsert({ notice_id: x.id, user_id: me.id }, { onConflict: 'notice_id,user_id', ignoreDuplicates: true }).then(() => {});
+      }
+      renderNotices();
+    } else if (e.target.matches('[data-notice-edit]')) {
+      openNoticeDialog(x);
+    } else if (e.target.matches('[data-notice-del]')) {
+      if (!confirm(`'${x.title}' 공지를 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) return;
+      const { error } = await sb.from('notices').delete().eq('id', x.id);
+      if (error) return alert(errMsg(error));
+      noticeOpen.delete(x.id);
+      await loadNotices(); renderNotices();
+    }
+  });
+  let noticeEditing = null;
+  function openNoticeDialog(x) {
+    noticeEditing = x || null;
+    $('notice-dlg-title').textContent = x ? '공지 수정' : '새 공지 작성';
+    $('notice-title').value = x?.title || '';
+    $('notice-body').value = x?.body || '';
+    $('notice-pinned').checked = !!x?.pinned;
+    showError($('notice-error'), '');
+    $('notice-dialog').showModal();
+  }
+  $('notice-new').addEventListener('click', () => openNoticeDialog(null));
+  $('notice-cancel').addEventListener('click', () => $('notice-dialog').close());
+  $('notice-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const row = { title: $('notice-title').value.trim(), body: $('notice-body').value.trim(), pinned: $('notice-pinned').checked };
+    if (!row.title) return showError($('notice-error'), '제목을 입력하세요.');
+    const btn = e.submitter; btn.disabled = true;
+    const { error } = noticeEditing
+      ? await sb.from('notices').update(row).eq('id', noticeEditing.id)
+      : await sb.from('notices').insert(row);
+    btn.disabled = false;
+    if (error) return showError($('notice-error'), errMsg(error));
+    $('notice-dialog').close();
+    await loadNotices(); renderNotices();
+  });
   document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.view)));
 
   document.querySelectorAll('.subtab').forEach((t) => t.addEventListener('click', () => {
@@ -764,6 +876,7 @@
     const { data, error } = await sb.from('branches').select('*').order('name');
     if (error) { alert(errMsg(error)); return; }
     branches = data;
+    await loadJobGroups();
     ['p-branch', 'd-branch', 'o-branch', 's-branch', 'r-branch'].forEach((id) => {
       const cur = $(id).value;
       $(id).innerHTML = branchOptions({ includeAll: true });
@@ -777,6 +890,69 @@
       });
     }
   }
+
+  // ---- 직원 분류(근무조/직무): 모든 지점 공통 목록 ----
+  let jobGroups = [];
+  async function loadJobGroups() {
+    if (!FEATURE_JOB_GROUPS) { jobGroups = []; return; }
+    const { data, error } = await sb.from('job_groups').select('*').order('sort').order('name');
+    if (error) return;
+    jobGroups = data;
+    ['p-job', 'd-job', 'o-job', 's-job'].forEach((id) => {
+      const el = $(id); if (!el) return;
+      const cur = el.value;
+      el.innerHTML = `<option value="">전체</option><option value="none">미지정</option>${jobGroups.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}`;
+      el.value = [...el.options].some((o) => o.value === cur) ? cur : '';
+    });
+    const na = $('na-job');
+    if (na) { const cur = na.value; na.innerHTML = jobOptions(null); na.value = cur; }
+  }
+  const jobName = (id) => jobGroups.find((g) => g.id === id)?.name || '';
+  const jobOptions = (cur) => `<option value="">(미지정)</option>${jobGroups.map((g) => `<option value="${g.id}" ${g.id === cur ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}`;
+  // 분류 필터: '' 전체, 'none' 미지정, 그 외 id
+  const matchJob = (jobId, f) => (!f ? true : f === 'none' ? jobId == null : String(jobId) === f);
+  // 출퇴근 기록의 분류 (그때 저장된 값, 없으면 직원의 현재 분류)
+  const recJob = (r) => (r.job_group_id !== undefined && r.job_group_id !== null ? r.job_group_id : staff.find((s) => s.id === r.user_id)?.job_group_id ?? null);
+
+  function renderJobGroups() {
+    if (!FEATURE_JOB_GROUPS) return;
+    $('job-list').innerHTML = jobGroups.map((g) => {
+      const n = staff.filter((s) => s.job_group_id === g.id && !s.deleted_at).length;
+      return `<span class="job-chip" data-id="${g.id}">${esc(g.name)} <span class="muted small">${n}명</span>
+        <button type="button" class="sh-x" data-job-rename title="이름 바꾸기" aria-label="이름 바꾸기">✎</button>
+        <button type="button" class="sh-x" data-job-del title="삭제" aria-label="삭제">✕</button></span>`;
+    }).join('') || '<span class="muted small">아직 분류가 없습니다. 오른쪽에 이름을 입력해 추가하세요.</span>';
+  }
+  $('job-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('job-name').value.trim();
+    if (!name) return;
+    const { error } = await sb.from('job_groups').insert({ name, sort: jobGroups.length + 1 });
+    if (error) return alert(/duplicate|unique/i.test(error.message) ? '같은 이름의 분류가 이미 있습니다.' : errMsg(error));
+    $('job-name').value = '';
+    await loadJobGroups();
+    renderJobGroups(); renderStaff();
+  });
+  $('job-list').addEventListener('click', async (e) => {
+    const chip = e.target.closest('.job-chip');
+    if (!chip) return;
+    const g = jobGroups.find((x) => x.id === Number(chip.dataset.id));
+    if (!g) return;
+    if (e.target.matches('[data-job-rename]')) {
+      const name = prompt('분류 이름을 바꿉니다.', g.name);
+      if (name === null || !name.trim() || name.trim() === g.name) return;
+      const { error } = await sb.from('job_groups').update({ name: name.trim() }).eq('id', g.id);
+      if (error) return alert(/duplicate|unique/i.test(error.message) ? '같은 이름의 분류가 이미 있습니다.' : errMsg(error));
+    } else if (e.target.matches('[data-job-del]')) {
+      const n = staff.filter((s) => s.job_group_id === g.id && !s.deleted_at).length;
+      if (!confirm(`'${g.name}' 분류를 삭제할까요?${n ? `\n이 분류의 직원 ${n}명은 '미지정'이 됩니다.` : ''}\n과거 출퇴근 기록의 분류 표시도 비워집니다.`)) return;
+      const { error } = await sb.from('job_groups').delete().eq('id', g.id);
+      if (error) return alert(errMsg(error));
+      await loadStaff();
+    } else return;
+    await loadJobGroups();
+    renderJobGroups(); renderStaff();
+  });
 
   async function loadStaff() {
     const { data, error } = await fetchAll(() => sb.from('profiles').select('*').order('name').order('id'));
@@ -862,6 +1038,16 @@
   const nameQ = (prefix) => ($(`${prefix}-search`)?.value || '').trim().toLowerCase();
   const nameHit = (prefix, name) => { const q = nameQ(prefix); return !q || String(name || '').toLowerCase().includes(q); };
   const searchTimers = {};
+  // 분류 필터 (개인별은 이미 불러온 기록에서 다시 계산, 일자별·초과근무는 다시 조회)
+  ['p', 'd', 'o'].forEach((prefix) => {
+    $(`${prefix}-job`).addEventListener('change', () => {
+      if (prefix === 'p') renderStaffSummary();
+      else if (prefix === 'd') loadDaily(true);
+      else loadOvertimeAdmin(true);
+    });
+  });
+  const jobHit = (prefix, jobId) => matchJob(jobId ?? null, $(`${prefix}-job`)?.value || '');
+
   ['p', 'd', 'o'].forEach((prefix) => {
     $(`${prefix}-search`).addEventListener('input', () => {
       clearTimeout(searchTimers[prefix]);
@@ -1017,7 +1203,7 @@
     if (seq !== dailySeq) return;
     const error = att.error || ot.error;
     if (error) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
-    const data = att.data.filter((r) => nameHit('d', r.profile?.name));
+    const data = att.data.filter((r) => nameHit('d', r.profile?.name) && jobHit('d', recJob(r)));
     dailyRows = data;
     dailyOt = ot.data;
     if (!data.length) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${nameQ('d') ? `"${esc(nameQ('d'))}" 이름의 기록이 없습니다.` : '기록이 없습니다.'}</td></tr>`; $('admin-summary').textContent = ''; return; }
@@ -1065,10 +1251,11 @@
     const map = new Map();
     // 기록이 없는 직원도 0일로 표시
     const blank = () => ({ branches: new Set(), days: 0, reg: 0, ot: 0, total: 0, doneDays: 0, open: 0, edited: 0 });
-    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id)).forEach((s) => {
+    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id) && jobHit('p', s.job_group_id)).forEach((s) => {
       map.set(s.id, { name: s.name, homeBranch: s.branch_id, ...blank() });
     });
     personalRows.forEach((r) => {
+      if (!jobHit('p', recJob(r))) return;
       let e = map.get(r.user_id);
       if (!e) {
         e = { name: r.profile?.name || '(알 수 없음)', homeBranch: null, ...blank() };
@@ -1145,7 +1332,7 @@
     } catch (e) { alert(e.message); return; }
     finally { btn.disabled = false; btn.textContent = label; }
     if (att.error || otRes.error) return alert(errMsg(att.error || otRes.error));
-    const rows = att.data;
+    const rows = att.data.filter((r) => jobHit(prefix, recJob(r)));
     const otReqs = otRes.data;
     const X = window.XLSX;
     const fb = $(`${prefix}-branch`).value;
@@ -1153,7 +1340,7 @@
 
     // 대상 직원: 조건에 맞는 재직자 + 기간 중 기록이 있는 사람 (지점 → 이름 순)
     const people = new Map();
-    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id)).forEach((s) => people.set(s.id, s));
+    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id) && jobHit(prefix, s.job_group_id)).forEach((s) => people.set(s.id, s));
     rows.forEach((r) => {
       if (!people.has(r.user_id)) people.set(r.user_id, staff.find((s) => s.id === r.user_id) || { id: r.user_id, name: r.profile?.name || '(알 수 없음)', branch_id: r.branch_id });
     });
@@ -1163,7 +1350,9 @@
     const otOf = (r) => (r && r.clock_out ? approvedOtMsForRow(r, otReqs) : 0);
 
     // ===== 시트1: 달력형 =====
-    const FIX = ['순번', '성명', '지점명', '입사일', '구분'];
+    const JG = FEATURE_JOB_GROUPS; // 분류 칸 포함 여부
+    const FIX = ['순번', '성명', '지점명', '입사일', ...(JG ? ['분류'] : []), '구분'];
+    const blankFix = FIX.slice(0, -1).map(() => '');
     const SUM = ['근무일', '소정근로(시간)', '연장(시간)', '총(시간)'];
     const nF = FIX.length;
     const nD = dates.length;
@@ -1179,9 +1368,9 @@
       const reg = done.reduce((t, r) => t + workRegMs(r), 0);
       const ot = done.reduce((t, r) => t + otOf(r), 0);
       const sums = [rows.filter(Boolean).length, hours1(reg), hours1(ot), hours1(reg + ot)];
-      aoa.push([i + 1, p.name, branchName(p.branch_id), p.hire_date || '', '출근', ...rows.map((r) => (r ? hm(r.clock_in) : '')), ...sums]);
-      aoa.push(['', '', '', '', '퇴근', ...rows.map((r) => (!r ? '' : r.clock_out ? hm(r.clock_out) : '미퇴근')), '', '', '', '']);
-      aoa.push(['', '', '', '', '연장', ...rows.map((r) => (r && r.clock_out ? hours1(otOf(r)) : '')), '', '', '', '']);
+      aoa.push([i + 1, p.name, branchName(p.branch_id), p.hire_date || '', ...(JG ? [jobName(p.job_group_id)] : []), '출근', ...rows.map((r) => (r ? hm(r.clock_in) : '')), ...sums]);
+      aoa.push([...blankFix, '퇴근', ...rows.map((r) => (!r ? '' : r.clock_out ? hm(r.clock_out) : '미퇴근')), '', '', '', '']);
+      aoa.push([...blankFix, '연장', ...rows.map((r) => (r && r.clock_out ? hours1(otOf(r)) : '')), '', '', '', '']);
     });
     const ws = X.utils.aoa_to_sheet(aoa);
 
@@ -1192,7 +1381,7 @@
     for (let c = nF + nD; c < nC; c++) merges.push(M(1, c, 2, c));
     list.forEach((_, i) => {
       const r = 3 + i * 3;
-      for (let c = 0; c < 4; c++) merges.push(M(r, c, r + 2, c));
+      for (let c = 0; c < nF - 1; c++) merges.push(M(r, c, r + 2, c));
       for (let c = nF + nD; c < nC; c++) merges.push(M(r, c, r + 2, c));
     });
     ws['!merges'] = merges;
@@ -1229,15 +1418,15 @@
       }
     }
     ws.A1.s = { font: { bold: true, sz: 14 }, alignment: { horizontal: 'left', vertical: 'center' } };
-    ws['!cols'] = [{ wch: 5 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, { wch: 5 }, ...dates.map(() => ({ wch: 6 })), { wch: 7 }, { wch: 9 }, { wch: 9 }, { wch: 9 }];
+    ws['!cols'] = [{ wch: 5 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, ...(JG ? [{ wch: 8 }] : []), { wch: 5 }, ...dates.map(() => ({ wch: 6 })), { wch: 7 }, { wch: 9 }, { wch: 9 }, { wch: 9 }];
     ws['!rows'] = [{ hpt: 26 }];
 
     // ===== 시트2: 일별 상세 (직원 × 날짜, 기록 없는 날은 빈칸) =====
-    const detail = [['이름', '지점', '날짜', '요일', '정규 시작', '정규 종료', '출근', '퇴근', '휴게시간', '소정근로시간', '연장근로시간(승인)', '총 근무시간', '미승인 초과', '비고']];
+    const detail = [['이름', '지점', ...(JG ? ['분류'] : []), '날짜', '요일', '정규 시작', '정규 종료', '출근', '퇴근', '휴게시간', '소정근로시간', '연장근로시간(승인)', '총 근무시간', '미승인 초과', '비고']];
     list.forEach((p) => {
       dates.forEach((d) => {
         const r = rec.get(`${p.id}|${d}`);
-        if (!r) { detail.push([p.name, branchName(p.branch_id), d, wdOf(d), '', '', '', '', '', '', '', '', '', '']); return; }
+        if (!r) { detail.push([p.name, branchName(p.branch_id), ...(JG ? [jobName(p.job_group_id)] : []), d, wdOf(d), '', '', '', '', '', '', '', '', '', '']); return; }
         const b = r.branch || branches.find((x) => x.id === r.branch_id);
         const hrs = hoursFor(r.branch_id, d, b);
         const brk = breakMs(regularMs(r));
@@ -1245,7 +1434,7 @@
         const ot = otOf(r);
         const extra = r.clock_out ? unapprovedMsForRow(r, otReqs) : 0;
         const memo = [hrs.special ? `특정일 근무시간${hrs.note ? `(${hrs.note})` : ''}` : '', r.note || ''].filter(Boolean).join(' / ');
-        detail.push([p.name, r.branch?.name || branchName(r.branch_id), d, wdOf(d), tmLabel(hrs.start), tmLabel(hrs.end),
+        detail.push([p.name, r.branch?.name || branchName(r.branch_id), ...(JG ? [jobName(recJob(r))] : []), d, wdOf(d), tmLabel(hrs.start), tmLabel(hrs.end),
           hm(r.clock_in), r.clock_out ? hm(r.clock_out) : '미퇴근',
           r.clock_out ? hmDur(brk) : '', r.clock_out ? hmDur(reg) : '', r.clock_out ? hmDur(ot) : '', r.clock_out ? hmDur(reg + ot) : '',
           extra >= UNAPPROVED_SHOW_MS ? hmDur(extra) : '', memo]);
@@ -1357,7 +1546,7 @@
     if (seq !== otSeq) return;
     const error = ot.error || att.error;
     if (error) { tbody.innerHTML = `<tr><td colspan="10" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
-    otRows = ot.data.filter((q) => nameHit('o', q.profile?.name));
+    otRows = ot.data.filter((q) => nameHit('o', q.profile?.name) && jobHit('o', staff.find((s) => s.id === q.user_id)?.job_group_id));
     otAtt = att.data;
     loadOtBadge();
     if (!otRows.length) { tbody.innerHTML = `<tr><td colspan="10" class="empty">${nameQ('o') ? `"${esc(nameQ('o'))}" 이름의 신청 내역이 없습니다.` : '신청 내역이 없습니다.'}</td></tr>`; $('ot-summary').textContent = ''; return; }
@@ -1454,7 +1643,8 @@
     // 삭제(퇴사) 처리된 직원은 [퇴사자 관리]에서 따로 관리
     const q = $('s-search').value.trim().toLowerCase();
     const hit = (s) => !q || s.name.toLowerCase().includes(q) || loginIdOf(s.email).toLowerCase().includes(q);
-    const list = staff.filter((s) => matchBranch(s.branch_id, fb) && !s.deleted_at && hit(s))
+    const fj = $('s-job').value;
+    const list = staff.filter((s) => matchBranch(s.branch_id, fb) && matchJob(s.job_group_id ?? null, fj) && !s.deleted_at && hit(s))
       .sort((a, b) => (isActive(b.id) - isActive(a.id)) || a.name.localeCompare(b.name, 'ko'));
     $('staff-list').innerHTML = list.map((s) => {
       const st = authStatus.get(s.id);
@@ -1466,6 +1656,7 @@
         <td>${self ? '' : `<input type="checkbox" class="s-check" ${staffChecked.has(s.id) ? 'checked' : ''}>`}</td>
         <td><input type="text" value="${esc(s.name)}" maxlength="30" data-field="name"></td>
         <td><select data-field="branch_id">${branchOptions({ current: s.branch_id, onlyActive: true })}</select></td>
+        ${FEATURE_JOB_GROUPS ? `<td><select data-field="job_group_id">${jobOptions(s.job_group_id ?? null)}</select></td>` : ''}
         <td><input type="date" value="${esc(s.hire_date || '')}" data-field="hire_date" class="hire-input"></td>
         <td>${esc(loginIdOf(s.email))}</td>
         <td>${statusKnown ? (active ? '<span class="status-on">사용 중</span>' : '<span class="status-off">비활성</span>') : '-'}</td>
@@ -1479,7 +1670,8 @@
           ${!self && statusKnown && !active ? '<button class="btn small danger-outline" data-delete>삭제</button>' : ''}
         </td>
       </tr>`;
-    }).join('') || `<tr><td colspan="10" class="empty">${q ? `"${esc(q)}"에 해당하는 직원이 없습니다.` : '직원이 없습니다.'}</td></tr>`;
+    }).join('') || `<tr><td colspan="${FEATURE_JOB_GROUPS ? 11 : 10}" class="empty">${q ? `"${esc(q)}"에 해당하는 직원이 없습니다.` : '직원이 없습니다.'}</td></tr>`;
+    renderJobGroups();
     updateLogoutButtons();
   }
 
@@ -1518,6 +1710,7 @@
     updateLogoutButtons();
   });
   $('s-search').addEventListener('input', () => renderStaff());
+  $('s-job').addEventListener('change', () => renderStaff());
   $('s-check-all').addEventListener('change', (e) => {
     visibleStaffIds().forEach((id) => { if (e.target.checked) staffChecked.add(id); else staffChecked.delete(id); });
     renderStaff();
@@ -1576,6 +1769,7 @@
         password: $('na-pw').value,
         branch_id: $('na-branch').value || null,
         hire_date: $('na-hire').value || null,
+        ...(FEATURE_JOB_GROUPS ? { job_group_id: $('na-job').value || null } : {}),
         ...flags,
       });
       msg.textContent = `${name}(${loginId}) 직원을 추가했습니다. 아이디와 초기 비밀번호를 직원에게 전달하세요.`;
@@ -1595,7 +1789,10 @@
   // ---------------------------------------------------------------
   //  직원 일괄 등록 (엑셀/CSV 명단 → 검사 → 50명씩 나눠 등록 → 결과 파일)
   // ---------------------------------------------------------------
-  const BULK_HEAD = ['이름', '아이디', '지점', '입사일', '권한', '초기 비밀번호'];
+  const BULK_HEAD = FEATURE_JOB_GROUPS
+    ? ['이름', '아이디', '지점', '입사일', '분류', '권한', '초기 비밀번호']
+    : ['이름', '아이디', '지점', '입사일', '권한', '초기 비밀번호'];
+  const BULK_TEXT_COLS = FEATURE_JOB_GROUPS ? [1, 3, 6] : [1, 3, 5]; // 아이디·입사일·비밀번호 칸은 텍스트 서식
   // 입사일: 2024-01-02 / 2024.1.2 / 2024/1/2 / 24-1-2 / 1/2/24(엑셀 날짜) → 'YYYY-MM-DD', 비어 있으면 '', 틀리면 null
   function parseHireDate(v) {
     const s = String(v ?? '').trim();
@@ -1652,15 +1849,17 @@
       ['아이디', '필수', `영문 소문자·숫자·. _ - 로 2~30자. 로그인할 때 이 아이디만 입력합니다. (@${CFG.EMAIL_DOMAIN || ''})`, 'hong / 00123'],
       ['지점', '선택', '아래 [사용 중인 지점] 이름을 그대로 적습니다. 비우면 지점 미지정', branches.find((b) => b.is_active)?.name || '본사'],
       ['입사일', '선택', '2024-01-02 형식 (2024.1.2, 24-1-2도 가능). 근태표 엑셀에 표시됩니다', '2024-01-02'],
+      ...(FEATURE_JOB_GROUPS ? [['분류', '선택', '아래 [분류 목록] 이름을 그대로 적습니다 (직원 관리 → 직원 분류에서 만든 이름). 비우면 미지정', jobGroups[0]?.name || '판매']] : []),
       ['권한', '선택', '일반 사용자 / 슈퍼바이저 / 매니저 중 하나. 비우면 일반 사용자. 슈퍼바이저는 지점 필수', '일반 사용자'],
       ['초기 비밀번호', '선택', '8자 이상. 비우면 10자리 무작위로 자동 생성', ''],
       [],
       ['사용 중인 지점'],
       ...branches.filter((b) => b.is_active).map((b) => [b.name]),
+      ...(FEATURE_JOB_GROUPS ? [[], ['분류 목록'], ...jobGroups.map((g) => [g.name])] : []),
     ];
     // 아이디·비밀번호 칸은 텍스트 서식 (00123 같은 사번이 123으로 바뀌지 않게)
     downloadXlsx('직원_일괄등록_양식.xlsx', [BULK_HEAD], {
-      sheetName: '직원 명단', textCols: [1, 3, 5], blankRows: BULK_MAX, filter: false,
+      sheetName: '직원 명단', textCols: BULK_TEXT_COLS, blankRows: BULK_MAX, filter: false,
       sheets: [{ name: '작성 안내', lines: guide }],
     });
   });
@@ -1688,12 +1887,12 @@
     if (hi < 0) throw new Error('첫 줄에 "이름", "아이디" 칸 제목이 있는 양식을 사용하세요. ([양식 내려받기])');
     const head = table[hi].map(norm);
     const col = (...names) => head.findIndex((h) => names.includes(h));
-    const c = { name: col('이름'), id: col('아이디'), branch: col('지점', '소속 지점', '소속지점', '지점명'), hire: col('입사일'), role: col('권한'), pw: col('초기 비밀번호', '초기비밀번호', '비밀번호') };
+    const c = { name: col('이름'), id: col('아이디'), branch: col('지점', '소속 지점', '소속지점', '지점명'), hire: col('입사일'), job: FEATURE_JOB_GROUPS ? col('분류', '근무조', '직무') : -1, role: col('권한'), pw: col('초기 비밀번호', '초기비밀번호', '비밀번호') };
     const rows = [];
     table.slice(hi + 1).forEach((r, k) => {
       const get = (i) => (i < 0 ? '' : norm(r[i]));
-      if (![c.name, c.id, c.branch, c.hire, c.role, c.pw].some((i) => get(i))) return; // 빈 줄
-      rows.push({ line: hi + k + 2, name: get(c.name), id: get(c.id).toLowerCase(), branchName: get(c.branch), hireText: get(c.hire), roleText: get(c.role), pw: c.pw < 0 ? '' : String(r[c.pw] ?? '').trim() });
+      if (![c.name, c.id, c.branch, c.hire, c.job, c.role, c.pw].some((i) => get(i))) return; // 빈 줄
+      rows.push({ line: hi + k + 2, name: get(c.name), id: get(c.id).toLowerCase(), branchName: get(c.branch), hireText: get(c.hire), jobText: get(c.job), roleText: get(c.role), pw: c.pw < 0 ? '' : String(r[c.pw] ?? '').trim() });
     });
     if (!rows.length) throw new Error('명단이 비어 있습니다.');
     if (rows.length > BULK_MAX) throw new Error(`한 번에 ${BULK_MAX}명까지 등록할 수 있습니다. 파일을 나눠서 올려 주세요. (현재 ${rows.length}명)`);
@@ -1719,6 +1918,11 @@
         if (!b) e.push(`없는 지점 "${r.branchName}"`);
         else if (!b.is_active) e.push(`사용 중지된 지점 "${r.branchName}"`);
         else r.branchId = b.id;
+      }
+      r.jobId = null;
+      if (r.jobText) {
+        const g = jobGroups.find((x) => x.name === r.jobText);
+        if (!g) e.push(`없는 분류 "${r.jobText}"`); else r.jobId = g.id;
       }
       r.hire = parseHireDate(r.hireText);
       if (r.hire === null) e.push(`입사일 "${r.hireText}" 형식 오류 (예: 2024-01-02)`);
@@ -1759,7 +1963,7 @@
       const res = r.status === 'invalid' ? `<span class="bulk-bad">${esc(r.msg)}</span>`
         : r.status === 'fail' ? `<span class="bulk-bad">등록 실패: ${esc(r.msg)}</span>`
           : r.status === 'done' ? '<span class="bulk-good">등록됨</span>' : '<span class="muted">등록 가능</span>';
-      return `<tr class="${cls}"><td class="num">${r.line}</td><td>${esc(r.name)}</td><td>${esc(r.id)}</td><td>${esc(r.branchName || '(미지정)')}</td><td>${esc(r.hire || r.hireText || '')}</td>
+      return `<tr class="${cls}"><td class="num">${r.line}</td><td>${esc(r.name)}</td><td>${esc(r.id)}</td><td>${esc(r.branchName || '(미지정)')}</td><td>${esc(r.hire || r.hireText || '')}</td>${FEATURE_JOB_GROUPS ? `<td>${esc(r.jobText || '')}</td>` : ''}
         <td>${r.role ? roleLabel(r.role) : esc(r.roleText)}</td><td>${r.pwAuto ? '<span class="muted">자동 생성</span>' : '직접 지정'}</td><td>${res}</td></tr>`;
     }).join('');
   }
@@ -1822,7 +2026,7 @@
             const d = await staffApi({
               action: 'bulk_create',
               domain: CFG.EMAIL_DOMAIN,
-              rows: part.map((r) => ({ login_id: r.id, name: r.name, password: r.pw, branch_id: r.branchId, hire_date: r.hire || null, ...roleFlags(r.role) })),
+              rows: part.map((r) => ({ login_id: r.id, name: r.name, password: r.pw, branch_id: r.branchId, hire_date: r.hire || null, ...(FEATURE_JOB_GROUPS ? { job_group_id: r.jobId } : {}), ...roleFlags(r.role) })),
             });
             results = d.results;
           } catch (err) {
@@ -1847,13 +2051,13 @@
   });
 
   $('bulk-result').addEventListener('click', () => {
-    const lines = [['이름', '아이디', '지점', '입사일', '권한', '초기 비밀번호', '결과']];
+    const lines = [[...BULK_HEAD, '결과']];
     bulkRows.slice().sort((a, b) => a.line - b.line).forEach((r) => {
-      lines.push([r.name, r.id, r.branchName, r.hire || r.hireText || '', r.role ? roleLabel(r.role) : r.roleText,
+      lines.push([r.name, r.id, r.branchName, r.hire || r.hireText || '', ...(FEATURE_JOB_GROUPS ? [r.jobText || ''] : []), r.role ? roleLabel(r.role) : r.roleText,
         r.status === 'done' ? r.pw : '', r.status === 'done' ? '등록됨' : `미등록: ${r.msg}`]);
     });
     const d = new Date();
-    downloadXlsx(`직원_등록결과_${ymd(d)}_${hm(d).replace(':', '')}.xlsx`, lines, { sheetName: '등록 결과', textCols: [1, 3, 5] });
+    downloadXlsx(`직원_등록결과_${ymd(d)}_${hm(d).replace(':', '')}.xlsx`, lines, { sheetName: '등록 결과', textCols: BULK_TEXT_COLS });
   });
 
   // 비밀번호 초기화 / 비활성화
@@ -2065,6 +2269,7 @@
     if (!name) return alert('이름을 입력하세요.');
     const bv = tr.querySelector('[data-field="branch_id"]').value;
     const update = { name, branch_id: bv ? Number(bv) : null, hire_date: tr.querySelector('[data-field="hire_date"]').value || null };
+    if (FEATURE_JOB_GROUPS) { const jv = tr.querySelector('[data-field="job_group_id"]').value; update.job_group_id = jv ? Number(jv) : null; }
     if (tr.dataset.id !== me.id) {
       Object.assign(update, roleFlags(tr.querySelector('[data-field="role"]').value));
       if (update.is_branch_manager && !update.branch_id) return alert('슈퍼바이저는 소속 지점이 있어야 합니다. 소속 지점을 먼저 선택하세요.');
@@ -2082,6 +2287,7 @@
       setUserLabel();
     }
     await loadStaff();
+    renderJobGroups(); // 분류별 인원 수 갱신
   });
 
   // 지점 관리
