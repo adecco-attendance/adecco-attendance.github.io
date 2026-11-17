@@ -148,6 +148,11 @@ tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px;
 .sh-x:hover { color: var(--danger); }
 .btn.sh-add { padding: 2px 9px; font-size: 12px; color: var(--primary); border-color: #c9d8f5; }
 .sh-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* 지원 근무 */
+.tag-support { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 600; color: #6b3fa0; background: #f1e9fb; border-radius: 999px; padding: 1px 8px; white-space: nowrap; vertical-align: middle; }
+td > select + .tag-support { display: block; margin: 4px 0 0; width: fit-content; }
+#work-hours.support-note { color: #6b3fa0; font-weight: 600; white-space: pre-line; }
+
 /* 공지사항 */
 .notice-list { display: grid; gap: 8px; }
 .notice { border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; }

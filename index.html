@@ -343,6 +343,24 @@
           </form>
         </div>
 
+        <div class="card-head section-head"><h2>지원 근무</h2></div>
+        <p class="muted small" style="margin:0 0 8px">직원이 정해진 기간 동안 다른 지점에서 근무할 때 미리 등록합니다. 그 기간에는 <b>지원 지점 기준</b>으로 GPS 출퇴근·정규시간·초과근무 승인이 처리되고, 기간이 끝나면 자동으로 원래 지점으로 돌아갑니다.</p>
+        <form id="sp-form" class="filters">
+          <label>직원 <select id="sp-user" required></select></label>
+          <label>지원 지점 <select id="sp-branch" required></select></label>
+          <label>시작일 <input type="date" id="sp-start" required></label>
+          <label>종료일 <input type="date" id="sp-end" required></label>
+          <label class="grow">메모 <input type="text" id="sp-note" maxlength="50" placeholder="예) 연말 행사 지원"></label>
+          <button type="submit" class="btn primary">등록</button>
+        </form>
+        <p id="sp-msg" class="msg" hidden></p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead><tr><th>기간</th><th>직원</th><th>원래 지점 → 지원 지점</th><th>메모</th><th>상태</th><th>관리</th></tr></thead>
+            <tbody id="sp-list"></tbody>
+          </table>
+        </div>
+
         <div class="card-head section-head"><h2>직원 목록</h2></div>
         <div class="filters">
           <label>지점

@@ -67,6 +67,26 @@
     if (error) return;
     specialHours = new Map(data.map((h) => [`${h.branch_id}|${h.work_date}`, h]));
   }
+  // 지원 근무 (support_assignments): 직원이 기간 동안 다른 지점에서 근무. 직원은 본인 것만 받아 옴
+  let supports = [];
+  async function loadSupports() {
+    if (!me) return;
+    const since = shiftDate(ymd(new Date()), -60);
+    const { data, error } = await fetchAll(() => sb.from('support_assignments')
+      .select('*, to_branch:branches!support_assignments_to_branch_id_fkey(id, name, lat, lng, radius_m, work_start, work_end), from_branch:branches!support_assignments_from_branch_id_fkey(name), person:profiles!support_assignments_user_id_fkey(name)')
+      .gte('end_date', since).order('start_date').order('id'));
+    if (error) return;
+    supports = data;
+  }
+  const supportOn = (uid, date) => supports.find((s) => s.user_id === uid && s.start_date <= date && date <= s.end_date) || null;
+  // 그날 내가 근무하는 지점 (지원 근무면 지원 지점). { id, name, lat, lng, radius_m, work_start, work_end, support }
+  function myBranchOn(date) {
+    const s = me ? supportOn(me.id, date) : null;
+    if (s?.to_branch) return { ...s.to_branch, id: s.to_branch_id, support: s };
+    return me?.branch ? { ...me.branch, id: me.branch_id, support: null } : null;
+  }
+  const supportLabel = (s) => `${s.start_date === s.end_date ? dateLabel(s.start_date) : `${dateLabel(s.start_date)}~${dateLabel(s.end_date)}`}`;
+
   // 그 날짜의 지점 정규 근무시간 (특정일이 있으면 그 시간). b: 지점 정보(평소 시간)
   function hoursFor(branchId, date, b) {
     const sp = branchId != null ? specialHours.get(`${branchId}|${date}`) : null;
@@ -247,7 +267,7 @@
     $('manager-note').hidden = me.is_admin || !isManager();
     $('manager-note').textContent = isManager() && !me.is_admin
       ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 지점만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
-    await loadSpecialHours(); // 특정일 근무시간 (정규 근무 계산에 필요)
+    await Promise.all([loadSpecialHours(), loadSupports()]); // 특정일 근무시간·지원 근무 (정규 근무 계산·GPS에 필요)
     loadNotices(); // 공지사항 (새 공지 수 표시)
     switchTab('employee');
     showView('app');
@@ -481,6 +501,7 @@
       Promise.all([loadBranches(), loadStaff()]).then(later('staff-list', renderStaff)); // 빠른 DB 조회
       loadAuthStatus().then(later('staff-list', renderStaff)); // 계정 상태(Edge Function)는 느려서 따로
       loadSessions().then(later('staff-list', renderStaff)); // 로그인 중인 기기 수
+      loadSupports().then(later('sp-form', renderStaff)); // 지원 근무
     }
     if (sub === 'branches') {
       renderBranches();
@@ -551,9 +572,9 @@
   let geo = { status: 'idle' }; // idle | locating | ok | denied | error | unsupported
   let geoWatch = null;
 
-  // 소속 지점에 위치가 등록되어 있으면 GPS 확인 대상
+  // 오늘 근무하는 지점(지원 근무면 지원 지점)에 위치가 등록되어 있으면 GPS 확인 대상
   const branchLoc = () => {
-    const b = me?.branch;
+    const b = myBranchOn(ymd(new Date()));
     return b && b.lat != null && b.lng != null ? b : null;
   };
   function distanceM(lat1, lng1, lat2, lng2) {
@@ -765,21 +786,25 @@
 
   // 정규 근무시간 안내 + 신청 기본값(정규 퇴근 ~ +2시간)
   function setupOvertimeForm() {
-    const b = me?.branch;
     const today = ymd(new Date());
-    const hrs = hoursFor(me?.branch_id, today, b);
+    const b = myBranchOn(today);
+    const hrs = hoursFor(b?.id ?? null, today, b);
     const ws = tmLabel(hrs.start);
     const we = tmLabel(hrs.end);
-    $('work-hours').hidden = !we;
-    $('work-hours').textContent = !we ? ''
-      : hrs.special ? `오늘은 특정일 근무시간 ${ws} ~ ${we}${hrs.note ? ` (${hrs.note})` : ''} · 평소 ${tmLabel(b?.work_start)} ~ ${tmLabel(b?.work_end)} (${b?.name || ''})`
-        : `정규 근무시간 ${ws} ~ ${we} (${b.name})`;
+    // 출퇴근 화면 안내: 평소 정규 근무시간은 표시하지 않고, 지원 근무·특정일 근무시간처럼 '평소와 다른 날'만 알림
+    const sup = b?.support ? `오늘은 ${b.name} 지원 근무입니다${b.support.note ? ` (${b.support.note})` : ''}.` : '';
+    const spc = hrs.special ? `오늘은 특정일 근무시간 ${ws} ~ ${we}입니다${hrs.note ? ` (${hrs.note})` : ''}.` : '';
+    const note = [sup, spc].filter(Boolean).join('\n');
+    $('work-hours').hidden = !note;
+    $('work-hours').textContent = note;
+    $('work-hours').classList.toggle('support-note', !!note);
     $('ot-date').value = today;
     $('ot-start').value = we || '18:00';
     const [h, m] = ($('ot-start').value).split(':').map(Number);
     $('ot-end').value = `${String((h + 2) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    $('ot-help').textContent = we ? `정규 근무시간(${ws} ~ ${we}) 밖에서만 신청할 수 있습니다.` : '';
-    $('ot-help').hidden = !we;
+    // 초과근무 신청 안내 문구는 표시하지 않음 (정규시간과 겹치면 신청할 때 안내)
+    $('ot-help').textContent = '';
+    $('ot-help').hidden = true;
   }
 
   function showOtMsg(text, kind) {
@@ -793,7 +818,8 @@
     const start = new Date(`${date}T${$('ot-start').value}:00+09:00`);
     let end = new Date(`${date}T${$('ot-end').value}:00+09:00`);
     if (end <= start) end = new Date(end.getTime() + 24 * 3600 * 1000); // 자정 넘김
-    const hrs = hoursFor(me?.branch_id, date, me?.branch);
+    const db = myBranchOn(date); // 그날 근무 지점 (지원 근무 반영)
+    const hrs = hoursFor(db?.id ?? null, date, db);
     const we = hrs.end;
     const ws = hrs.start;
     if (we && ws && start < kstAt(date, we) && end > kstAt(date, ws)) {
@@ -952,6 +978,72 @@
     } else return;
     await loadJobGroups();
     renderJobGroups(); renderStaff();
+  });
+
+  // ---- 지원 근무 등록·목록 (매니저, 직원 관리) ----
+  // 직원 목록·기록 옆에 붙는 '지원' 표시 (오늘 이후 예정·진행 중만)
+  function supportTags(uid) {
+    const today = ymd(new Date());
+    return supports.filter((s) => s.user_id === uid && s.end_date >= today)
+      .map((s) => `<span class="tag-support" title="${esc(s.note || '')}">${supportLabel(s)} ${esc(s.to_branch?.name || '')} 지원</span>`).join('');
+  }
+  function spMsg(text, kind) { const el = $('sp-msg'); el.textContent = text; el.className = `msg ${kind || ''}`; el.hidden = !text; }
+  function renderSupports() {
+    const today = ymd(new Date());
+    const curU = $('sp-user').value;
+    const active = staff.filter((s) => !s.deleted_at && isActive(s.id)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    $('sp-user').innerHTML = '<option value="">직원 선택</option>' + active.map((s) => `<option value="${s.id}">${esc(s.name)} (${esc(branchName(s.branch_id))})</option>`).join('');
+    $('sp-user').value = curU;
+    const curB = $('sp-branch').value;
+    $('sp-branch').innerHTML = '<option value="">지점 선택</option>' + branches.filter((b) => b.is_active).map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    $('sp-branch').value = curB;
+    if (!$('sp-start').value) { $('sp-start').value = today; $('sp-end').value = today; }
+    const since = shiftDate(today, -7);
+    const rows = supports.filter((s) => s.end_date >= since);
+    $('sp-list').innerHTML = rows.map((s) => {
+      const st = s.end_date < today ? '<span class="st st-cancelled">종료</span>' : s.start_date <= today ? '<span class="st st-approved">진행 중</span>' : '<span class="st st-pending">예정</span>';
+      return `<tr data-id="${s.id}" class="${s.end_date < today ? 'zero' : ''}">
+        <td>${supportLabel(s)}</td>
+        <td>${esc(s.person?.name || '')}</td>
+        <td>${esc(s.from_branch?.name || '미지정')} → <b>${esc(s.to_branch?.name || '')}</b></td>
+        <td class="note">${esc(s.note || '')}</td>
+        <td>${st}</td>
+        <td class="actions"><button class="btn small danger-outline" data-sp-del>${s.start_date > today ? '취소' : '삭제'}</button></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="empty">등록된 지원 근무가 없습니다.</td></tr>';
+  }
+  $('sp-start').addEventListener('change', () => { if ($('sp-end').value < $('sp-start').value) $('sp-end').value = $('sp-start').value; });
+  $('sp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const row = { user_id: $('sp-user').value, to_branch_id: Number($('sp-branch').value), start_date: $('sp-start').value, end_date: $('sp-end').value, note: $('sp-note').value.trim() || null };
+    if (!row.user_id || !row.to_branch_id) return spMsg('직원과 지원 지점을 선택하세요.', 'err');
+    if (row.end_date < row.start_date) return spMsg('종료일이 시작일보다 빠릅니다.', 'err');
+    const p = staff.find((s) => s.id === row.user_id);
+    if (p && p.branch_id === row.to_branch_id) return spMsg('원래 소속 지점과 같은 지점입니다. 다른 지점을 고르세요.', 'err');
+    if (supports.some((s) => s.user_id === row.user_id && s.start_date <= row.end_date && s.end_date >= row.start_date)) return spMsg('이 직원은 같은 기간에 이미 지원 근무가 등록되어 있습니다.', 'err');
+    const btn = e.submitter; btn.disabled = true;
+    const { error } = await sb.from('support_assignments').insert(row);
+    btn.disabled = false;
+    if (error) return spMsg(errMsg(error), 'err');
+    spMsg(`${p?.name || ''}님을 ${branchName(row.to_branch_id)}에 ${row.start_date === row.end_date ? dateLabel(row.start_date) : `${dateLabel(row.start_date)}~${dateLabel(row.end_date)}`} 지원 근무로 등록했습니다.`, 'ok');
+    $('sp-note').value = '';
+    await loadSupports();
+    renderSupports(); renderStaff();
+  });
+  $('sp-list').addEventListener('click', async (e) => {
+    if (!e.target.matches('[data-sp-del]')) return;
+    const s = supports.find((x) => x.id === Number(e.target.closest('tr').dataset.id));
+    if (!s) return;
+    const today = ymd(new Date());
+    const msg = s.start_date > today
+      ? `${s.person?.name}님의 ${s.to_branch?.name} 지원 근무(${supportLabel(s)})를 취소할까요?`
+      : `${s.person?.name}님의 ${s.to_branch?.name} 지원 근무(${supportLabel(s)}) 등록을 삭제할까요?\n이미 남은 출퇴근 기록은 그대로 ${s.to_branch?.name} 기록으로 유지됩니다.`;
+    if (!confirm(msg)) return;
+    const { error } = await sb.from('support_assignments').delete().eq('id', s.id);
+    if (error) return alert(errMsg(error));
+    spMsg('');
+    await loadSupports();
+    renderSupports(); renderStaff();
   });
 
   async function loadStaff() {
@@ -1118,8 +1210,10 @@
     let groups = [...branches.map((b) => ({ id: b.id, name: b.name, active: b.is_active })), { id: null, name: '지점 미지정', active: true }];
     if (isManager()) groups = groups.filter((g) => g.id === me.branch_id); // 지점 관리자는 담당 지점만
     const total = { staff: 0, in: 0, working: 0, out: 0, absent: 0 };
+    // 오늘 근무할 지점: 지원 근무가 있으면 지원 지점, 없으면 소속 지점
+    const todayBranchOf = (s) => (supportOn(s.id, today)?.to_branch_id ?? s.branch_id ?? null);
     const rows = groups.map((g) => {
-      const members = staff.filter((s) => (s.branch_id ?? null) === g.id && isActive(s.id));
+      const members = staff.filter((s) => todayBranchOf(s) === g.id && isActive(s.id));
       // 출근 인원은 "기록된 지점" 기준 (오늘 지점을 옮긴 경우 대비)
       const recs = data.filter((r) => (r.branch_id ?? null) === g.id);
       const absent = members.filter((s) => !byUser.has(s.id));
@@ -1134,7 +1228,7 @@
       return `<tr>
         <td>${esc(g.name)}</td><td class="num">${c.staff}</td><td class="num">${c.in}</td>
         <td class="num">${c.working}</td><td class="num">${c.out}</td><td class="num">${c.absent}</td>
-        <td class="absent">${absent.map((s) => esc(s.name)).join(', ')}</td></tr>`;
+        <td class="absent">${absent.map((s) => esc(s.name) + (supportOn(s.id, today) ? '(지원)' : '')).join(', ')}</td></tr>`;
     }).join('');
     tbody.innerHTML = rows
       ? rows + `<tr class="total"><td>합계</td><td class="num">${total.staff}</td><td class="num">${total.in}</td><td class="num">${total.working}</td><td class="num">${total.out}</td><td class="num">${total.absent}</td><td></td></tr>`
@@ -1227,7 +1321,7 @@
         return `
       <tr>
         <td>${esc(r.branch?.name || '미지정')}</td>
-        <td>${esc(r.profile?.name)}</td>
+        <td>${esc(r.profile?.name)}${r.home_branch_id && r.home_branch_id !== r.branch_id ? `<span class="tag-support">지원 · ${esc(branchName(r.home_branch_id))} 소속</span>` : ''}</td>
         <td>${hm(r.clock_in)}${r.in_dist_m != null ? `<span class="dist">${r.in_dist_m}m</span>` : ''}</td>
         <td>${r.clock_out ? hm(r.clock_out) + (r.out_dist_m != null ? `<span class="dist">${r.out_dist_m}m</span>` : '') : '<span class="tag-open">미퇴근</span>'}</td>
         <td>${fmtDur(regularMs(r))}</td>
@@ -1433,7 +1527,10 @@
         const reg = workRegMs(r);
         const ot = otOf(r);
         const extra = r.clock_out ? unapprovedMsForRow(r, otReqs) : 0;
-        const memo = [hrs.special ? `특정일 근무시간${hrs.note ? `(${hrs.note})` : ''}` : '', r.note || ''].filter(Boolean).join(' / ');
+        const memo = [
+          r.home_branch_id && r.home_branch_id !== r.branch_id ? `지원 근무(${branchName(r.home_branch_id)} 소속)` : '',
+          hrs.special ? `특정일 근무시간${hrs.note ? `(${hrs.note})` : ''}` : '', r.note || '',
+        ].filter(Boolean).join(' / ');
         detail.push([p.name, r.branch?.name || branchName(r.branch_id), ...(JG ? [jobName(recJob(r))] : []), d, wdOf(d), tmLabel(hrs.start), tmLabel(hrs.end),
           hm(r.clock_in), r.clock_out ? hm(r.clock_out) : '미퇴근',
           r.clock_out ? hmDur(brk) : '', r.clock_out ? hmDur(reg) : '', r.clock_out ? hmDur(ot) : '', r.clock_out ? hmDur(reg + ot) : '',
@@ -1655,7 +1752,7 @@
       <tr data-id="${s.id}" class="${active ? '' : 'inactive'}">
         <td>${self ? '' : `<input type="checkbox" class="s-check" ${staffChecked.has(s.id) ? 'checked' : ''}>`}</td>
         <td><input type="text" value="${esc(s.name)}" maxlength="30" data-field="name"></td>
-        <td><select data-field="branch_id">${branchOptions({ current: s.branch_id, onlyActive: true })}</select></td>
+        <td><select data-field="branch_id">${branchOptions({ current: s.branch_id, onlyActive: true })}</select>${supportTags(s.id)}</td>
         ${FEATURE_JOB_GROUPS ? `<td><select data-field="job_group_id">${jobOptions(s.job_group_id ?? null)}</select></td>` : ''}
         <td><input type="date" value="${esc(s.hire_date || '')}" data-field="hire_date" class="hire-input"></td>
         <td>${esc(loginIdOf(s.email))}</td>
@@ -1672,6 +1769,7 @@
       </tr>`;
     }).join('') || `<tr><td colspan="${FEATURE_JOB_GROUPS ? 11 : 10}" class="empty">${q ? `"${esc(q)}"에 해당하는 직원이 없습니다.` : '직원이 없습니다.'}</td></tr>`;
     renderJobGroups();
+    renderSupports();
     updateLogoutButtons();
   }
 
