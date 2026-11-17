@@ -164,7 +164,10 @@ td > select + .tag-support { display: block; margin: 4px 0 0; width: fit-content
 .notice-meta { color: var(--muted); font-size: 13px; }
 .notice .pin { font-size: 12px; color: #8a5a00; background: #fff4d6; border-radius: 999px; padding: 1px 8px; }
 .notice .new { font-size: 11px; font-weight: 700; color: #fff; background: var(--danger); border-radius: 999px; padding: 1px 7px; }
-.notice-body { padding: 0 14px 12px; white-space: pre-line; line-height: 1.7; border-top: 1px dashed var(--line); padding-top: 12px; margin: 0 0 4px; }
+.notice-body { padding: 0 14px 12px; line-height: 1.7; border-top: 1px dashed var(--line); padding-top: 12px; margin: 0 0 4px; display: grid; gap: 12px; }
+.notice-text { white-space: pre-line; }
+.notice-guide { display: grid; gap: 12px; max-width: 460px; }
+.notice-guide .a2hs-step { background: #fff; }
 .notice-edited { margin: 0 14px 8px; }
 .notice-admin { display: flex; align-items: center; gap: 6px; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
 .empty-note { text-align: center; padding: 24px 0; margin: 0; }

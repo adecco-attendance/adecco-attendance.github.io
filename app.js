@@ -408,6 +408,21 @@
     $('notice-badge').hidden = !unread;
   }
   const fmtDateTime = (d) => `${ymd(d)} ${hm(d)}`;
+  // 공지 본문: 글은 그대로(줄바꿈 유지), [[홈화면안내:아이폰]] / [[홈화면안내:안드로이드]] 자리에는 단계별 그림 안내를 넣음
+  const NOTICE_GUIDES = { '홈화면안내:아이폰': 'ios', '홈화면안내:안드로이드': 'android' };
+  function noticeBodyHtml(body) {
+    return String(body || '').split(/\[\[([^\]]+)\]\]/).map((part, i) => {
+      if (i % 2 === 0) return part.trim() ? `<div class="notice-text">${esc(part.replace(/^\n+|\n+$/g, ''))}</div>` : '';
+      const os = NOTICE_GUIDES[part.trim()];
+      if (!os || !STEPS[os]) return `<div class="notice-text">${esc(`[[${part}]]`)}</div>`;
+      return `<div class="notice-guide">${STEPS[os].map((s, k) => `
+        <div class="a2hs-step">
+          <p><span class="a2hs-num">${k + 1}</span>${s.text}</p>
+          ${s.svg}
+          ${s.sub ? `<p class="sub">${s.sub}</p>` : ''}
+        </div>`).join('')}</div>`;
+    }).join('');
+  }
   function renderNotices() {
     $('notice-new').hidden = !me?.is_admin;
     const total = staff.filter((s) => !s.deleted_at).length;
@@ -420,7 +435,7 @@
           <span class="notice-title">${x.pinned ? '<span class="pin">📌 중요</span>' : ''}${isNew ? '<span class="new">NEW</span>' : ''}${esc(x.title)}</span>
           <span class="notice-meta">${fmtDateTime(x.created_at)}${x.author?.name ? ` · ${esc(x.author.name)}` : ''}</span>
         </button>
-        ${open ? `<div class="notice-body">${esc(x.body) || '<span class="muted">(내용 없음)</span>'}</div>
+        ${open ? `<div class="notice-body">${noticeBodyHtml(x.body) || '<span class="muted">(내용 없음)</span>'}</div>
           ${x.updated_at ? `<p class="muted small notice-edited">수정됨 ${fmtDateTime(x.updated_at)}</p>` : ''}
           ${me?.is_admin ? `<div class="notice-admin">
             <span class="muted small">읽음 ${readers}${total ? ` / ${total}명` : '명'}</span>
@@ -2746,40 +2761,47 @@
     <text x="160" y="${y + 82}" font-size="12" text-anchor="middle" fill="#333">아데코 근태</text>`;
 
   const STEPS = {
-    // 아이폰 사파리 (아래쪽 주소창 + ⋯ 버튼 화면 기준, 예전 화면은 □↑ 버튼)
+    // 아이폰 사파리 — 최신 iOS(26) 기본 화면 기준: 맨 아래 [<] [☰ 주소 ↻] [⧉]
     ios: [
       {
-        text: 'Safari 화면 <b>맨 아래 주소창 오른쪽</b>의 <b>⋯</b> 버튼을 누르세요',
-        sub: '화면 맨 아래에 <b>□↑</b>(공유) 버튼이 보이면 그 버튼을 누르고 3번으로 가세요. 아래 막대가 안 보이면 화면을 살짝 위로 밀어 주세요.',
-        svg: SVG(96, `<rect width="320" height="96" rx="12" fill="#f2f2f7"/>
+        text: 'Safari 화면 <b>맨 아래 주소창 왼쪽</b>의 <b>☰</b> 버튼을 누르세요',
+        sub: '기기에 따라 이 버튼이 <b>⋯</b> 모양일 수 있어요. 아래 막대가 안 보이면 화면을 살짝 아래로 내렸다 올려 주세요.',
+        svg: SVG(100, `<rect width="320" height="100" rx="12" fill="#f2f2f7"/>
           <text x="16" y="22" font-size="11" fill="#8e8e93">휴대폰 화면 맨 아래</text>
-          <rect x="12" y="40" width="244" height="40" rx="20" fill="#fff" stroke="#d1d1d6"/>
-          <text x="134" y="65" font-size="13" text-anchor="middle" fill="#333">adecco-attendance.github.io</text>
-          <circle cx="288" cy="60" r="20" fill="#fff" stroke="#d1d1d6"/>
-          <text x="288" y="66" font-size="20" font-weight="700" text-anchor="middle" fill="#111">⋯</text>
-          ${ring(288, 60, 25)}${arrowDown(288, 6, 33)}`),
+          <circle cx="32" cy="64" r="20" fill="#fff" stroke="#d1d1d6"/>
+          <text x="32" y="70" font-size="18" text-anchor="middle" fill="#111">‹</text>
+          <rect x="60" y="44" width="200" height="40" rx="20" fill="#fff" stroke="#d1d1d6"/>
+          <text x="84" y="70" font-size="18" text-anchor="middle" fill="#111">☰</text>
+          <text x="168" y="69" font-size="13" text-anchor="middle" fill="#333">…tendance.github.io</text>
+          <text x="242" y="70" font-size="16" text-anchor="middle" fill="#111">↻</text>
+          <circle cx="290" cy="64" r="20" fill="#fff" stroke="#d1d1d6"/>
+          <text x="290" y="70" font-size="16" text-anchor="middle" fill="#111">⧉</text>
+          ${ring(84, 64, 17)}${arrowDown(84, 6, 44)}`),
       },
       {
         text: '메뉴에서 <b>공유</b>를 누르세요',
         svg: SVG(120, `<rect width="320" height="120" rx="12" fill="#f2f2f7"/>
-          ${hiRow(14, '공유', '□↑')}${greyRow(54, 120)}${greyRow(86, 160)}`),
+          ${greyRow(14, 120)}${hiRow(48, '공유', '□↑')}${greyRow(86, 160)}`),
       },
       {
         text: '목록을 <b>아래로 내려서</b> <b>홈 화면에 추가</b>를 누르세요',
-        sub: '처음에는 "복사" 같은 항목만 보여요. 손가락으로 목록을 위로 밀어 아래쪽을 보세요.',
+        sub: '처음에는 "복사" 같은 항목만 보여요. 손가락으로 목록을 위로 밀어 아래쪽을 보세요. 끝까지 내려도 없으면 맨 아래 <b>작업 편집</b>을 눌러 "홈 화면에 추가" 옆 <b>+</b>를 눌러 주세요.',
         svg: SVG(170, `<rect width="320" height="170" rx="12" fill="#f2f2f7"/>
           <circle cx="50" cy="26" r="14" fill="#d1d1d6"/><circle cx="100" cy="26" r="14" fill="#d1d1d6"/><circle cx="150" cy="26" r="14" fill="#d1d1d6"/><circle cx="200" cy="26" r="14" fill="#d1d1d6"/>
           ${greyRow(52, 90)}${greyRow(86, 140)}${hiRow(124, '홈 화면에 추가', '⊞')}
           <text x="300" y="104" font-size="11" text-anchor="end" fill="#e0443e">↓ 아래로 내리기</text>`),
       },
       {
-        text: '오른쪽 위 <b>추가</b>를 누르면 끝!',
-        sub: '홈 화면에 "아데코 근태" 아이콘이 생깁니다.',
-        svg: SVG(150, `<rect width="320" height="150" rx="12" fill="#f2f2f7"/>
+        text: '<b>웹 앱으로 열기</b>가 켜진 채로 오른쪽 위 <b>추가</b>를 누르면 끝!',
+        sub: '홈 화면에 "아데코 근태" 아이콘이 생기고, 누르면 앱처럼 바로 열립니다.',
+        svg: SVG(196, `<rect width="320" height="196" rx="12" fill="#f2f2f7"/>
           <text x="20" y="28" font-size="14" fill="#007aff">취소</text>
           <text x="160" y="28" font-size="14" font-weight="700" text-anchor="middle" fill="#111">홈 화면에 추가</text>
           <text x="296" y="28" font-size="14" font-weight="700" text-anchor="end" fill="#007aff">추가</text>
-          ${ring(282, 23, 22)}${iconPreview(48)}`),
+          ${ring(282, 23, 22)}${iconPreview(46)}
+          <rect x="24" y="146" width="272" height="36" rx="8" fill="#fff"/>
+          <text x="38" y="169" font-size="13" fill="#111">웹 앱으로 열기</text>
+          <rect x="246" y="153" width="40" height="22" rx="11" fill="#34c759"/><circle cx="275" cy="164" r="9" fill="#fff"/>`),
       },
     ],
     // 안드로이드 크롬
