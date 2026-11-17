@@ -87,7 +87,8 @@ input:focus, select:focus { outline: 2px solid rgba(47, 111, 237, .35); border-c
 }
 .tab.active, .subtab.active { background: #e8effd; color: var(--primary); font-weight: 600; }
 .user-menu { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 14px; }
-.subtabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.subtabs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.subtabs[hidden] { display: none; }
 .tab, .subtab { white-space: nowrap; }
 
 /* 출퇴근 카드 */
@@ -301,6 +302,10 @@ dialog::backdrop { background: rgba(15, 20, 35, .45); }
 
 @media (max-width: 600px) {
   .topbar { gap: 8px; }
+  /* 위 탭 4개(매니저)가 한 줄에 들어가도록 같은 폭으로 나눔 */
+  .tabs { width: 100%; gap: 2px; }
+  .tabs .tab { flex: 1 1 0; min-width: 0; padding: 7px 2px; font-size: 14px; text-align: center; }
+  .tabs .tab[hidden] { display: none; }
   .user-menu { width: 100%; margin-left: 0; justify-content: flex-end; }
   .now-time { font-size: 36px; }
   .filters > label { flex: 1 1 140px; }

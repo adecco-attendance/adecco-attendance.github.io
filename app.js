@@ -262,8 +262,7 @@
     setUserLabel();
     // 관리 화면: 본사 관리자 또는 지점 관리자(담당 지점만)
     $('admin-tab').hidden = !(me.is_admin || isManager());
-    $('admin-tab').textContent = me.is_admin ? '매니저' : '슈퍼바이저';
-    document.querySelectorAll('.hq-only').forEach((el) => { el.hidden = !me.is_admin; });
+    document.querySelectorAll('.hq-only').forEach((el) => { el.hidden = !me.is_admin; }); // '관리자 메뉴' 탭은 매니저만
     $('manager-note').hidden = me.is_admin || !isManager();
     $('manager-note').textContent = isManager() && !me.is_admin
       ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 지점만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
@@ -372,8 +371,14 @@
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
     $('employee-view').hidden = view !== 'employee';
     $('notice-view').hidden = view !== 'notice';
-    $('admin-view').hidden = view !== 'admin';
-    if (view === 'admin') initAdmin();
+    // 근태 관리 / 관리자 메뉴: 같은 화면, 위 탭에 맞는 작은 탭 줄만 보이고 마지막으로 보던 작은 탭을 다시 엶
+    const adm = view === 'admin' || view === 'hq';
+    $('admin-view').hidden = !adm;
+    if (adm) {
+      document.querySelectorAll('#admin-view .subtabs[data-for]').forEach((r) => { r.hidden = r.dataset.for !== view; });
+      const row = document.querySelector(`#admin-view .subtabs[data-for="${view}"]`);
+      (row.querySelector('[data-sub].active') || row.querySelector('[data-sub]')).click();
+    }
     if (view === 'notice') {
       renderNotices();
       // 매니저는 '읽음 N / 전체 M명'을 보려고 직원 수가 필요
@@ -497,9 +502,11 @@
   });
   document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.view)));
 
-  document.querySelectorAll('.subtab').forEach((t) => t.addEventListener('click', () => {
+  // 작은 탭: 근태 관리(출퇴근 기록·초과근무 승인) / 관리자 메뉴(직원 목록~지점 관리)
+  const STAFF_SUBS = ['staff', 'staff-add', 'support', 'job'];
+  document.querySelectorAll('#admin-view [data-sub]').forEach((t) => t.addEventListener('click', () => {
     const sub = t.dataset.sub;
-    document.querySelectorAll('.subtab').forEach((x) => x.classList.toggle('active', x === t));
+    t.parentElement.querySelectorAll('[data-sub]').forEach((x) => x.classList.toggle('active', x === t)); // 각 줄이 따로 기억
     document.querySelectorAll('#admin-view [data-group]').forEach((el) => { el.hidden = el.dataset.group !== sub; });
     if (sub === 'records') initAdmin();
     if (sub === 'overtime') {
@@ -511,7 +518,7 @@
     // 이미 불러온 데이터로 먼저 바로 그리고, 최신 데이터가 오는 대로 다시 그림
     // 표 안에서 입력 중이면 다시 그리지 않음 (입력 내용이 지워지지 않도록)
     const later = (listId, render) => () => { if (!$(listId).contains(document.activeElement)) render(); };
-    if (sub === 'staff') {
+    if (STAFF_SUBS.includes(sub)) {
       renderStaff();
       Promise.all([loadBranches(), loadStaff()]).then(later('staff-list', renderStaff)); // 빠른 DB 조회
       loadAuthStatus().then(later('staff-list', renderStaff)); // 계정 상태(Edge Function)는 느려서 따로
@@ -2206,7 +2213,7 @@
         await staffApi({ action: 'delete', user_id: s.id });
         await Promise.all([loadStaff(), loadAuthStatus()]);
         renderStaff();
-        alert(`${s.name} 계정을 삭제했습니다. 근태 기록은 보존되며 [퇴사자 관리]에서 볼 수 있습니다.`);
+        alert(`${s.name} 계정을 삭제했습니다. 근태 기록은 보존되며 관리자 메뉴의 [퇴사자 관리]에서 볼 수 있습니다.`);
       } catch (err) {
         alert(err.message);
         e.target.disabled = false;
@@ -2313,7 +2320,9 @@
   // [기록 보기] → 출퇴근 기록 탭의 개인별 근무현황에서 그 직원의 근무 기간을 조회
   function showRetiredRecords(s) {
     const info = retiredInfo.get(s.id);
-    document.querySelector('.subtab[data-sub="records"]').click();
+    document.querySelector('#admin-view [data-sub="records"]').classList.add('active');
+    document.querySelector('#admin-view [data-sub="overtime"]').classList.remove('active');
+    switchTab('admin'); // 근태 관리 → 출퇴근 기록
     $('p-branch').value = '';
     fillUserSelect('p');
     $('p-user').value = s.id;
