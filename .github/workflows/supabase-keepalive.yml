@@ -1,0 +1,36 @@
+# Supabase 무료 요금제는 약 1주일 동안 사용이 없으면 자동으로 일시정지됩니다.
+# 정식 운영 전 접속이 드문 기간에 멈추지 않도록, 3일마다 한 번 가볍게 접속합니다.
+# (데이터를 읽거나 바꾸지 않고 서버의 현재 시각만 받아 옴)
+# ※ 정식 운영이 시작되면 이 파일을 삭제합니다 (직원들이 매일 접속하므로 필요 없음).
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: '0 0 */3 * *'   # 3일마다 UTC 0시 = 한국 시간 오전 9시
+  workflow_dispatch:         # GitHub 화면의 [Run workflow]로 수동 실행
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Supabase 접속 확인
+        env:
+          SUPABASE_URL: https://tjdeajvepgpsceqzentc.supabase.co
+          # 사이트(config.js)에 이미 공개된 anon 키 (비밀 키 아님)
+          SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqZGVhanZlcGdwc2NlcXplbnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0NjE1NjksImV4cCI6MjExMDAzNzU2OX0.9nBBvJA-se9T2Ar6Ii92RnNQ-F_aA-iIfdeDFqcR8yg
+        run: |
+          code=$(curl -s -o response.txt -w "%{http_code}" -X POST \
+            "$SUPABASE_URL/rest/v1/rpc/keepalive" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP $code: $(cat response.txt)"
+          if [ "$code" != "200" ]; then
+            echo "::error::Supabase 응답 이상 (HTTP $code). 프로젝트가 일시정지되었는지 대시보드에서 확인하세요."
+            exit 1
+          fi
