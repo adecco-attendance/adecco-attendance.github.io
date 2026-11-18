@@ -250,7 +250,7 @@
   }
 
   async function enterApp(user) {
-    const { data, error } = await sb.from('profiles').select('*, branch:branches(name, lat, lng, radius_m, work_start, work_end)').eq('id', user.id).single();
+    const { data, error } = await sb.from('profiles').select('*, branch:branches!profiles_branch_id_fkey(name, lat, lng, radius_m, work_start, work_end)') /* 소속 점포 연결을 명시 (담당 점포 표 manager_branches와 구분) */.eq('id', user.id).single();
     if (error || !data) {
       await sb.auth.signOut({ scope: 'local' });
       showView('login');
@@ -1819,7 +1819,7 @@
     const [ot, att] = await Promise.all([
       fetchAll(() => {
         let q = sb.from('overtime_requests')
-          .select('*, branch:branches(name), profile:profiles!overtime_requests_user_id_fkey(name), reviewer:profiles!overtime_requests_reviewed_by_fkey(name)')
+          .select('*, branch:branches!overtime_requests_branch_id_fkey(name), profile:profiles!overtime_requests_user_id_fkey(name), reviewer:profiles!overtime_requests_reviewed_by_fkey(name)')
           .gte('work_date', from).lte('work_date', to)
           .order('work_date', { ascending: false }).order('start_at', { ascending: true }).order('id');
         if (fb === 'none') q = q.is('branch_id', null);
