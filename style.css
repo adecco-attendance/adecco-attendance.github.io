@@ -286,6 +286,19 @@ td.num { font-variant-numeric: tabular-nums; }
 .name-chip.done { border-color: var(--line); background: #f3f4f6; color: var(--muted); }
 tr.total td { font-weight: 600; border-top: 2px solid var(--line); }
 tr.total.top td { border-top: 0; border-bottom: 2px solid var(--line); background: #f8fafc; }
+/* 권역 매니저 담당 점포 지정 */
+.mb-btn { display: block; margin-top: 4px; }
+.na-mb { flex: 1 1 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border: 1px dashed #bcd0fb; border-radius: 10px; background: #f5f8ff; }
+.na-mb[hidden] { display: none; }
+.na-mb-label { font-size: 14px; }
+.na-mb .req { color: #c2410c; font-size: 12px; font-weight: 600; margin-left: 2px; }
+.mb-dialog { width: min(480px, calc(100vw - 32px)); }
+.mb-tools { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.mb-tools input { flex: 1 1 160px; }
+.mb-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px 10px; max-height: 50vh; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.mb-item { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+.mb-item[hidden] { display: none; }
 .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 12px; }
 
 /* 다이얼로그 */

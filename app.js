@@ -260,17 +260,24 @@
     me = data;
     adminLoaded = false; otLoaded = false; authStatus = new Map(); // 다른 계정으로 다시 로그인한 경우 대비
     setUserLabel();
-    // 관리 화면: 본사 관리자 또는 점포 관리자(담당 점포만)
-    $('admin-tab').hidden = !(me.is_admin || isManager());
-    document.querySelectorAll('.hq-only').forEach((el) => { el.hidden = !me.is_admin; }); // '관리자 메뉴' 탭은 매니저만
-    $('manager-note').hidden = me.is_admin || !isManager();
-    $('manager-note').textContent = isManager() && !me.is_admin
-      ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 점포만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
+    await loadMyScope(); // 권역 매니저: 담당 점포
+    // 관리 화면: 총괄·권역 매니저 또는 슈퍼바이저(담당 점포만)
+    $('admin-tab').hidden = !(isMgr() || isManager());
+    document.querySelectorAll('.hq-only').forEach((el) => { el.hidden = !isMgr(); });     // '관리자 메뉴' 탭: 총괄·권역 매니저
+    document.querySelectorAll('.hq-total').forEach((el) => { el.hidden = !isHQ(); });     // 총괄 매니저만 (점포 추가 등)
+    $('manager-note').hidden = !(isManager() || isRegion());
+    $('manager-note').textContent = isManager()
+      ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 점포만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)`
+      : isRegion() ? `권역 매니저 · 담당 점포 ${myScope.size}곳만 조회·처리할 수 있습니다 (본인 기록·초과근무는 총괄 매니저가 처리)` : '';
     await Promise.all([loadSpecialHours(), loadSupports()]); // 특정일 근무시간·지원 근무 (정규 근무 계산·GPS에 필요)
     loadNotices(); // 공지사항 (새 공지 수 표시)
-    switchTab('employee');
+    // 총괄·권역 매니저는 출퇴근 등록 대상이 아님 → '출·퇴근 등록' 탭을 숨기고 근태 관리부터 보여 줌 (위치 확인도 안 함)
+    const worker = !isMgr();
+    document.querySelector('.tab[data-view="employee"]').hidden = !worker;
+    switchTab(worker ? 'employee' : 'admin');
     showView('app');
     checkSession();
+    if (!worker) return;
     startGps();
     refreshToday();
     setupOvertimeForm();
@@ -278,8 +285,23 @@
     loadMyOvertime();
   }
 
-  // 점포 관리자(본사 관리자가 아니고, 소속 점포가 있는 경우만 유효)
-  const isManager = () => !!(me && !me.is_admin && me.is_branch_manager && me.branch_id);
+  // 권한: 총괄 매니저(is_admin, 전체) / 권역 매니저(is_region_manager, 총괄이 지정한 담당 점포) / 슈퍼바이저(is_branch_manager, 소속 점포 1곳) / 일반
+  // 슈퍼바이저(점포 관리자): 총괄·권역 매니저가 아니고 소속 점포가 있는 경우만 유효
+  const isManager = () => !!(me && !me.is_admin && !me.is_region_manager && me.is_branch_manager && me.branch_id);
+  const isHQ = () => !!me?.is_admin;                                  // 총괄 매니저
+  const isRegion = () => !!(me && !me.is_admin && me.is_region_manager); // 권역 매니저
+  const isMgr = () => isHQ() || isRegion();                           // 관리자 메뉴 사용
+  const noSelf = () => isManager() || isRegion();                     // 본인 기록·초과근무는 총괄이 처리
+  // 출퇴근 대상 직원인지: 총괄·권역 매니저는 출퇴근을 하지 않음 (근무현황·엑셀·직원 선택 목록에서 제외)
+  const isWorker = (s) => !s.is_admin && !s.is_region_manager;
+  let myScope = new Set();                                            // 권역 매니저의 담당 점포 id
+  const scopeBranches = () => (isRegion() ? branches.filter((b) => myScope.has(b.id)) : branches);
+  async function loadMyScope() {
+    myScope = new Set();
+    if (!isRegion()) return;
+    const { data } = await sb.from('manager_branches').select('branch_id').eq('user_id', me.id);
+    myScope = new Set((data || []).map((r) => Number(r.branch_id)));
+  }
 
   function setUserLabel() {
     $('user-name').textContent = me.branch?.name ? `${me.branch.name} · ${me.name}님` : `${me.name}님`;
@@ -751,7 +773,7 @@
 
   // 화면이 다시 보일 때 상태·위치 갱신, 숨겨지면 GPS 중지(배터리 절약)
   document.addEventListener('visibilitychange', () => {
-    if (!me) return;
+    if (!me || isMgr()) return; // 매니저는 출퇴근 화면이 없음
     if (document.visibilityState === 'visible') { refreshToday(); startGps(); }
     else stopGps();
   });
@@ -915,9 +937,11 @@
   const branchName = (id) => branches.find((b) => b.id === id)?.name || '미지정';
 
   // 점포 select 옵션. includeAll: '전체'/'미지정' 포함(필터용), onlyActive: 사용 중 점포만(+ 현재값)
+  //  권역 매니저는 담당 점포만, '점포 미지정'은 없음 (미지정 직원은 총괄만 관리)
   function branchOptions({ includeAll = false, current = null, onlyActive = false } = {}) {
-    let html = includeAll ? '<option value="">전체 점포</option><option value="none">점포 미지정</option>' : '<option value="">(미지정)</option>';
-    branches.forEach((b) => {
+    let html = includeAll ? (isRegion() ? '<option value="">전체 (담당 점포)</option>' : '<option value="">전체 점포</option><option value="none">점포 미지정</option>')
+      : (isRegion() ? '' : '<option value="">(미지정)</option>');
+    scopeBranches().forEach((b) => {
       if (onlyActive && !b.is_active && b.id !== current) return;
       html += `<option value="${b.id}" ${b.id === current ? 'selected' : ''}>${esc(b.name)}${b.is_active ? '' : ' (미사용)'}</option>`;
     });
@@ -1017,7 +1041,8 @@
   function renderSupports() {
     const today = ymd(new Date());
     const curU = $('sp-user').value;
-    const active = staff.filter((s) => !s.deleted_at && isActive(s.id)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    const active = staff.filter((s) => !s.deleted_at && isWorker(s) && isActive(s.id) && (!isRegion() || myScope.has(s.branch_id))) // 권역: 담당 점포 소속 직원만
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     $('sp-user').innerHTML = '<option value="">직원 선택</option>' + active.map((s) => `<option value="${s.id}">${esc(s.name)} (${esc(branchName(s.branch_id))})</option>`).join('');
     $('sp-user').value = curU;
     const curB = $('sp-branch').value;
@@ -1077,8 +1102,65 @@
     if (error) { alert(errMsg(error)); return; }
     staff = data;
     fillUserSelects();
-    if (me?.is_admin) updateRetiredBadge();
+    if (isMgr()) updateRetiredBadge();
+    if (isHQ()) loadMgrBranches(); // 권역 매니저별 담당 점포 (직원 목록 표시용)
   }
+
+  // ---- 권역 매니저 담당 점포 (총괄 매니저가 지정) ----
+  let mgrBranches = new Map(); // user_id -> Set(branch_id)
+  async function loadMgrBranches() {
+    const { data, error } = await sb.from('manager_branches').select('user_id, branch_id');
+    if (error) return;
+    mgrBranches = new Map();
+    data.forEach((r) => { if (!mgrBranches.has(r.user_id)) mgrBranches.set(r.user_id, new Set()); mgrBranches.get(r.user_id).add(Number(r.branch_id)); });
+    if (!$('sub-staff').hidden) renderStaff();
+  }
+  // 직원 추가 화면: 권한을 '권역 매니저'로 고르면 담당 점포를 바로 고를 수 있음 (등록과 함께 저장)
+  let naMb = new Set();
+  function updateNaMb() {
+    const region = $('na-role').value === 'region';
+    $('na-mb').hidden = !region;
+    $('na-mb-btn').textContent = naMb.size ? `담당 점포 ${naMb.size}곳 선택됨 · 변경` : '담당 점포 선택';
+    const names = branches.filter((b) => naMb.has(b.id)).map((b) => b.name);
+    $('na-mb-names').textContent = names.length ? (names.length > 6 ? `${names.slice(0, 6).join(', ')} 외 ${names.length - 6}곳` : names.join(', ')) : '아직 선택하지 않음';
+  }
+  $('na-role').addEventListener('change', updateNaMb);
+  $('na-mb-btn').addEventListener('click', () => openMgrBranches({ id: null, name: $('na-name').value.trim() || '새 권역 매니저', pending: true }));
+
+  let mbUser = null;
+  function openMgrBranches(s) {
+    mbUser = s;
+    const cur = s.pending ? naMb : (mgrBranches.get(s.id) || new Set());
+    $('mb-title').textContent = `${s.name} · 담당 점포 지정`;
+    $('mb-list').innerHTML = branches.filter((b) => b.is_active || cur.has(b.id)).map((b) =>
+      `<label class="mb-item"><input type="checkbox" value="${b.id}" ${cur.has(b.id) ? 'checked' : ''}> ${esc(b.name)}</label>`).join('')
+      || '<p class="muted">등록된 점포가 없습니다.</p>';
+    $('mb-search').value = '';
+    mbCount();
+    $('mb-dialog').showModal();
+  }
+  const mbCount = () => { $('mb-count').textContent = `${$('mb-list').querySelectorAll('input:checked').length}곳 선택`; };
+  $('mb-list').addEventListener('change', mbCount);
+  $('mb-search').addEventListener('input', () => {
+    const q = $('mb-search').value.trim();
+    $('mb-list').querySelectorAll('.mb-item').forEach((el) => { el.hidden = !!q && !el.textContent.includes(q); });
+  });
+  $('mb-all').addEventListener('click', () => { $('mb-list').querySelectorAll('.mb-item:not([hidden]) input').forEach((c) => { c.checked = true; }); mbCount(); });
+  $('mb-none').addEventListener('click', () => { $('mb-list').querySelectorAll('.mb-item:not([hidden]) input').forEach((c) => { c.checked = false; }); mbCount(); });
+  $('mb-cancel').addEventListener('click', () => $('mb-dialog').close());
+  $('mb-save').addEventListener('click', async () => {
+    if (!mbUser) return;
+    const ids = [...$('mb-list').querySelectorAll('input:checked')].map((c) => Number(c.value));
+    if (mbUser.pending) { naMb = new Set(ids); updateNaMb(); $('mb-dialog').close(); return; } // 직원 추가 전: 고른 것만 기억
+    const btn = $('mb-save'); btn.disabled = true;
+    const del = await sb.from('manager_branches').delete().eq('user_id', mbUser.id);
+    const ins = !del.error && ids.length ? await sb.from('manager_branches').insert(ids.map((b) => ({ user_id: mbUser.id, branch_id: b }))) : { error: null };
+    btn.disabled = false;
+    if (del.error || ins.error) return alert(errMsg(del.error || ins.error));
+    $('mb-dialog').close();
+    await loadMgrBranches();
+    renderStaff();
+  });
 
   // ---- 직원 계정 관리 (Edge Function 'manage-staff', 관리자 전용) ----
   async function staffApi(body) {
@@ -1094,7 +1176,7 @@
 
   let authStatus = new Map(); // user_id -> { banned, last_sign_in_at, email }
   async function loadAuthStatus() {
-    if (!me?.is_admin) { authStatus = new Map(); return; } // 계정 상태 조회는 본사 관리자만
+    if (!isMgr()) { authStatus = new Map(); return; } // 계정 상태 조회는 총괄·권역 매니저 (권역은 담당 점포 직원만 받음)
     try {
       const d = await staffApi({ action: 'list' });
       authStatus = new Map(d.users.map((u) => [u.id, u]));
@@ -1131,7 +1213,7 @@
     const fb = $(`${prefix}-branch`).value;
     const sel = $(`${prefix}-user`);
     const cur = sel.value;
-    const list = staff.filter((s) => matchBranch(s.branch_id, fb));
+    const list = staff.filter((s) => matchBranch(s.branch_id, fb) && isWorker(s)); // 매니저는 출퇴근 대상 아님
     sel.innerHTML = '<option value="">전체</option>' +
       list.map((s) => `<option value="${s.id}">${esc(s.name)}${s.deleted_at ? ' (퇴사)' : ''}</option>`).join('');
     sel.value = list.some((s) => s.id === cur) ? cur : '';
@@ -1140,7 +1222,7 @@
     fillUserSelect('p');
     fillUserSelect('d');
     fillUserSelect('o');
-    $('edit-user').innerHTML = staff.filter((s) => !s.deleted_at && !(isManager() && s.id === me.id)).map((s) =>
+    $('edit-user').innerHTML = staff.filter((s) => !s.deleted_at && isWorker(s) && !(noSelf() && s.id === me.id)).map((s) =>
       `<option value="${s.id}">${esc(s.name)} (${esc(branchName(s.branch_id))})</option>`).join('');
   }
 
@@ -1200,7 +1282,7 @@
   }
 
   async function initAdmin() {
-    if (!me?.is_admin && !isManager()) return;
+    if (!isMgr() && !isManager()) return;
     if (!adminReady) {
       const ym = ymd(new Date()).slice(0, 7);
       setMonth('p', ym);
@@ -1236,6 +1318,7 @@
     if (error) { tbody.innerHTML = `<tr><td colspan="4" class="empty">${esc(errMsg(error))}</td></tr>`; $('present-box').hidden = true; return; }
     let groups = [...branches.map((b) => ({ id: b.id, name: b.name, active: b.is_active })), { id: null, name: '점포 미지정', active: false }];
     if (isManager()) groups = groups.filter((g) => g.id === me.branch_id); // 슈퍼바이저는 담당 점포만
+    if (isRegion()) groups = groups.filter((g) => myScope.has(g.id));      // 권역 매니저는 담당 점포만
     const total = { in: 0, working: 0, out: 0 };
     const present = []; // [{ name, recs }]
     const rows = groups.map((g) => {
@@ -1248,7 +1331,7 @@
     }).join('');
     tbody.innerHTML = rows
       ? rows + `<tr class="total"><td>합계</td><td class="num">${total.in}</td><td class="num">${total.working}</td><td class="num">${total.out}</td></tr>`
-      : `<tr><td colspan="4" class="empty">${me?.is_admin ? '등록된 점포가 없습니다. 관리자 메뉴 → 점포 관리에서 추가하세요.' : '담당 점포가 없습니다.'}</td></tr>`;
+      : `<tr><td colspan="4" class="empty">${isHQ() ? '등록된 점포가 없습니다. 관리자 메뉴 → 점포 관리에서 추가하세요.' : isRegion() ? '담당 점포가 없습니다. 총괄 매니저에게 담당 점포 지정을 요청하세요.' : '담당 점포가 없습니다.'}</td></tr>`;
     // 출근자 명단 접기란: 펼침 상태는 새로고침해도 유지 (details 요소는 그대로 두고 내용만 바꿈)
     $('present-box').hidden = !total.in; // 출근 기록이 없으면 명단 접기란도 숨김
     $('present-head').innerHTML = `출근자 명단 <b>${total.in}명</b> <span class="muted">· 근무 중 ${total.working} · 퇴근 ${total.out}</span>`;
@@ -1275,7 +1358,7 @@
     $('missout-head').innerHTML = `⚠ 퇴근 미기록 <b>${missOutRows.length}건</b> <span class="muted">· 최근 7일, 오늘 제외</span>`;
     $('missout-list').innerHTML = missOutRows.map((r) => `<tr>
         <td>${esc(dateLabel(r.work_date))}</td><td>${esc(branchName(r.branch_id))}</td><td>${esc(r.profile?.name || '')}</td><td>${hm(r.clock_in)}</td>
-        <td class="actions">${isManager() && r.user_id === me.id ? '<span class="muted small">매니저 처리</span>' : `<button type="button" class="btn small" data-missout="${r.id}">퇴근 입력</button>`}</td>
+        <td class="actions">${noSelf() && r.user_id === me.id ? '<span class="muted small">매니저 처리</span>' : `<button type="button" class="btn small" data-missout="${r.id}">퇴근 입력</button>`}</td>
       </tr>`).join('');
     labelTable($('missout-list').closest('table'));
   }
@@ -1398,7 +1481,7 @@
       const lim = dayLimit.get(g.date) || PAGE;
       return head + g.rows.slice(0, lim).map((r) => {
         const extra = unapprovedMsForRow(r, dailyOt);
-        const canEdit = !(isManager() && r.user_id === me.id);
+        const canEdit = !(noSelf() && r.user_id === me.id);
         return `
       <tr class="rec">
         <td>${esc(r.branch?.name || '미지정')}</td>
@@ -1409,7 +1492,7 @@
         <td>${fmtDur(approvedOtMsForRow(r, dailyOt))}${extra >= UNAPPROVED_SHOW_MS ? `<span class="tag-warn">미승인 ${fmtDur(extra)}</span>` : ''}</td>
         <td class="note">${esc(r.note)}</td>
         <td class="edited">${r.updated_at ? `${esc(r.editor?.name || '알 수 없음')} · ${ymd(r.updated_at).slice(5)} ${hm(r.updated_at)}` : ''}</td>
-        <td>${isManager() && r.user_id === me.id ? '<span class="muted small">매니저 처리</span>' : `<button class="btn small" data-edit="${r.id}">수정</button>`}</td>
+        <td>${noSelf() && r.user_id === me.id ? '<span class="muted small">매니저 처리</span>' : `<button class="btn small" data-edit="${r.id}">수정</button>`}</td>
         ${mSum(`<b>${esc(r.profile?.name)}</b><span class="ms-sub">${esc(r.branch?.name || '미지정')}${r.home_branch_id && r.home_branch_id !== r.branch_id ? ' · 지원' : ''}</span>`,
           `${hm(r.clock_in)} ~ ${r.clock_out ? hm(r.clock_out) : '<span class="tag-open">미퇴근</span>'}${r.clock_out ? ` · <b>${fmtDur(workMs(r))}</b>` : ''}${extra >= UNAPPROVED_SHOW_MS ? ` <span class="tag-warn">미승인 ${fmtDur(extra)}</span>` : ''}`,
           canEdit ? `<button class="btn small" data-edit="${r.id}">수정</button>` : '')}
@@ -1445,11 +1528,13 @@
     const map = new Map();
     // 기록이 없는 직원도 0일로 표시
     const blank = () => ({ branches: new Set(), days: 0, reg: 0, ot: 0, total: 0, doneDays: 0, open: 0, edited: 0 });
-    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id) && jobHit('p', s.job_group_id)).forEach((s) => {
+    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isWorker(s) && isActive(s.id) && jobHit('p', s.job_group_id)).forEach((s) => {
       map.set(s.id, { name: s.name, homeBranch: s.branch_id, ...blank() });
     });
     personalRows.forEach((r) => {
       if (!jobHit('p', recJob(r))) return;
+      const who = staff.find((s) => s.id === r.user_id);
+      if (who && !isWorker(who)) return; // 매니저(예전 기록이 있어도)는 개인별 현황에서 제외
       let e = map.get(r.user_id);
       if (!e) {
         e = { name: r.profile?.name || '(알 수 없음)', homeBranch: null, ...blank() };
@@ -1543,7 +1628,7 @@
 
     // 대상 직원: 조건에 맞는 재직자 + 기간 중 기록이 있는 사람 (점포 → 이름 순)
     const people = new Map();
-    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id) && jobHit(prefix, s.job_group_id)).forEach((s) => people.set(s.id, s));
+    staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isWorker(s) && isActive(s.id) && jobHit(prefix, s.job_group_id)).forEach((s) => people.set(s.id, s));
     rows.forEach((r) => {
       if (!people.has(r.user_id)) people.set(r.user_id, staff.find((s) => s.id === r.user_id) || { id: r.user_id, name: r.profile?.name || '(알 수 없음)', branch_id: r.branch_id });
     });
@@ -1692,7 +1777,7 @@
     if (error) return showError($('edit-error'), errMsg(error));
     $('edit-dialog').close();
     reloadRecords();
-    if (me) { refreshToday(); loadMyRecords(); }
+    if (me && !isMgr()) { refreshToday(); loadMyRecords(); }
   });
 
   $('edit-delete').addEventListener('click', async () => {
@@ -1777,7 +1862,7 @@
       const rec = recognizedOtMs(q, otAtt);
       const actual = a ? `${hm(a.clock_in)}~${a.clock_out ? hm(a.clock_out) : '<span class="tag-open">미퇴근</span>'}` : '<span class="muted">기록 없음</span>';
       const reviewed = q.reviewed_at ? `<span class="edited">${esc(q.reviewer?.name || '')} · ${ymd(q.reviewed_at).slice(5)} ${hm(q.reviewed_at)}${q.review_note ? `<br>${esc(q.review_note)}` : ''}</span>` : '';
-      const mine = isManager() && q.user_id === me.id;
+      const mine = noSelf() && q.user_id === me.id;
       return `
       <tr class="rec" data-id="${q.id}">
         <td>${dateLabel(q.work_date)}</td>
@@ -1790,7 +1875,7 @@
         <td>${q.status === 'approved' ? fmtDur(rec) : (q.status === 'pending' && a?.clock_out ? `<span class="muted">승인 시 ${fmtDur(overlapMs(+new Date(q.start_at), +new Date(q.end_at), +new Date(a.clock_in), +new Date(a.clock_out)))}</span>` : '-')}</td>
         <td>${otStatusTag(q.status)}</td>
         <td class="actions">${q.status !== 'pending' ? reviewed
-          : (isManager() && q.user_id === me.id) ? '<span class="muted small">매니저 처리</span>'
+          : (noSelf() && q.user_id === me.id) ? '<span class="muted small">매니저 처리</span>'
             : '<button class="btn small primary" data-ot-approve>승인</button><button class="btn small danger-outline" data-ot-reject>반려</button>'}</td>
         ${mSum(`<b>${esc(q.profile?.name)}</b><span class="ms-sub">${esc(q.branch?.name || '미지정')}</span>`,
           `${dateLabel(q.work_date)} ${otTimeLabel(q)} <span class="muted">(${fmtDur(req)} · ${q.is_after ? '사후' : '사전'})</span>`,
@@ -1853,10 +1938,13 @@
   });
 
   // 권한: 일반 사용자(user) / 슈퍼바이저(supervisor, 소속 점포 관리) / 매니저(manager, 전체 관리)
-  const ROLES = [['user', '일반 사용자'], ['supervisor', '슈퍼바이저'], ['manager', '매니저']];
-  const roleOf = (s) => (s.is_admin ? 'manager' : s.is_branch_manager ? 'supervisor' : 'user');
-  const roleOptions = (cur) => ROLES.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('');
-  const roleFlags = (role) => ({ is_admin: role === 'manager', is_branch_manager: role === 'supervisor' });
+  //  권역 매니저는 일반 사용자·슈퍼바이저만 지정 가능 (매니저 권한은 총괄만)
+  const ROLES = [['user', '일반 사용자'], ['supervisor', '슈퍼바이저'], ['region', '권역 매니저'], ['manager', '총괄 매니저']];
+  const roleOf = (s) => (s.is_admin ? 'manager' : s.is_region_manager ? 'region' : s.is_branch_manager ? 'supervisor' : 'user');
+  const roleOptions = (cur) => ROLES.filter(([v]) => isHQ() || v === 'user' || v === 'supervisor' || v === cur)
+    .map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('');
+  const roleFlags = (role) => ({ is_admin: role === 'manager', is_region_manager: role === 'region', is_branch_manager: role === 'supervisor' });
+  const isMgrRow = (s) => s.is_admin || s.is_region_manager; // 매니저 계정 (권역 매니저는 고칠 수 없음)
 
   // 직원 관리
   function renderStaff() {
@@ -1864,7 +1952,11 @@
     const fb = $('s-branch').value;
     const curNa = $('na-branch').value;
     $('na-branch').innerHTML = branchOptions({ onlyActive: true });
-    $('na-branch').value = curNa;
+    if ([...$('na-branch').options].some((o) => o.value === curNa)) $('na-branch').value = curNa;
+    const curRole = $('na-role').value || 'user';
+    $('na-role').innerHTML = roleOptions(null); // 권역 매니저: 일반 사용자·슈퍼바이저만
+    $('na-role').value = [...$('na-role').options].some((o) => o.value === curRole) ? curRole : 'user';
+    updateNaMb();
     const statusKnown = authStatus.size > 0;
     // 삭제(퇴사) 처리된 직원은 [퇴사자 관리]에서 따로 관리
     const q = $('s-search').value.trim().toLowerCase();
@@ -1876,24 +1968,30 @@
       const st = authStatus.get(s.id);
       const active = isActive(s.id);
       const self = s.id === me.id;
+      const locked = !self && isRegion() && isMgrRow(s); // 권역 매니저가 보는 다른 매니저 계정: 보기만
+      const dis = locked ? 'disabled' : '';
       const last = st?.last_sign_in_at ? `${ymd(st.last_sign_in_at)} ${hm(st.last_sign_in_at)}` : (statusKnown ? '없음' : '-');
+      const mb = mgrBranches.get(s.id);
+      const mbInfo = isHQ() && s.is_region_manager && !s.is_admin
+        ? `<button type="button" class="btn small mb-btn" data-mb>담당 점포 ${mb?.size || 0}곳</button>` : '';
       return `
       <tr data-id="${s.id}" class="${active ? '' : 'inactive'}">
-        <td>${self ? '' : `<input type="checkbox" class="s-check" ${staffChecked.has(s.id) ? 'checked' : ''}>`}</td>
-        <td><input type="text" value="${esc(s.name)}" maxlength="30" data-field="name"></td>
-        <td><select data-field="branch_id">${branchOptions({ current: s.branch_id, onlyActive: true })}</select>${supportTags(s.id)}</td>
+        <td>${self || locked ? '' : `<input type="checkbox" class="s-check" ${staffChecked.has(s.id) ? 'checked' : ''}>`}</td>
+        <td><input type="text" value="${esc(s.name)}" maxlength="30" data-field="name" ${dis}></td>
+        <td><select data-field="branch_id" ${dis}>${branchOptions({ current: s.branch_id, onlyActive: true })}</select>${supportTags(s.id)}</td>
         ${FEATURE_JOB_GROUPS ? `<td><select data-field="job_group_id">${jobOptions(s.job_group_id ?? null)}</select></td>` : ''}
-        <td><input type="date" value="${esc(s.hire_date || '')}" data-field="hire_date" class="hire-input"></td>
+        <td><input type="date" value="${esc(s.hire_date || '')}" data-field="hire_date" class="hire-input" ${dis}></td>
         <td>${esc(loginIdOf(s.email))}</td>
         <td>${statusKnown ? (active ? '<span class="status-on">사용 중</span>' : '<span class="status-off">비활성</span>') : '-'}</td>
         <td>${sessionInfo(s.id)}</td>
         <td class="edited">${last}</td>
-        <td><select data-field="role" ${self ? 'disabled title="본인의 권한은 바꿀 수 없습니다"' : ''}>${roleOptions(roleOf(s))}</select></td>
+        <td><select data-field="role" ${self ? 'disabled title="본인의 권한은 바꿀 수 없습니다"' : dis}>${roleOptions(roleOf(s))}</select>${mbInfo}</td>
         <td class="actions">
+          ${locked ? '<span class="muted small">총괄 매니저만 수정</span>' : `
           <button class="btn small" data-save>저장</button>
           <button class="btn small" data-reset>비밀번호 초기화</button>
           ${self ? '' : `<button class="btn small" data-toggle="${active ? 'off' : 'on'}">${active ? '비활성화' : '다시 사용'}</button>`}
-          ${!self && statusKnown && !active ? '<button class="btn small danger-outline" data-delete>삭제</button>' : ''}
+          ${!self && statusKnown && !active ? '<button class="btn small danger-outline" data-delete>삭제</button>' : ''}`}
         </td>
       </tr>`;
     }).join('') || `<tr><td colspan="${FEATURE_JOB_GROUPS ? 11 : 10}" class="empty">${q ? `"${esc(q)}"에 해당하는 직원이 없습니다.` : '직원이 없습니다.'}</td></tr>`;
@@ -1911,7 +2009,7 @@
     return s ? `<span class="status-on">로그인 ${s.sessions}대</span>` : '<span class="muted">-</span>';
   }
   async function loadSessions() {
-    if (!me?.is_admin) return;
+    if (!isMgr()) return;
     const { data, error } = await sb.rpc('session_counts');
     if (error) return;
     sessionMap = new Map(data.map((r) => [r.user_id, r]));
@@ -1987,8 +2085,13 @@
       msg.className = 'msg err'; msg.hidden = false; btn.disabled = false;
       return;
     }
+    if (flags.is_region_manager && !naMb.size) {
+      msg.textContent = '권역 매니저는 담당 점포를 1곳 이상 선택해야 합니다. [담당 점포 선택]을 누르세요.';
+      msg.className = 'msg err'; msg.hidden = false; btn.disabled = false;
+      return;
+    }
     try {
-      await staffApi({
+      const created = await staffApi({
         action: 'create',
         login_id: loginId,
         domain: CFG.EMAIL_DOMAIN,
@@ -1999,9 +2102,16 @@
         ...(FEATURE_JOB_GROUPS ? { job_group_id: $('na-job').value || null } : {}),
         ...flags,
       });
-      msg.textContent = `${name}(${loginId}) 직원을 추가했습니다. 아이디와 초기 비밀번호를 직원에게 전달하세요.`;
+      // 권역 매니저: 고른 담당 점포 저장
+      let mbNote = '';
+      if (flags.is_region_manager && created?.id) {
+        const { error: mbErr } = await sb.from('manager_branches').insert([...naMb].map((b) => ({ user_id: created.id, branch_id: b })));
+        mbNote = mbErr ? `\n※ 담당 점포 저장 실패: ${errMsg(mbErr)} → 직원 목록의 [담당 점포] 버튼으로 다시 지정하세요.` : ` 담당 점포 ${naMb.size}곳을 지정했습니다.`;
+      }
+      msg.textContent = `${name}(${loginId}) 직원을 추가했습니다. 아이디와 초기 비밀번호를 직원에게 전달하세요.${mbNote}`;
       msg.className = 'msg ok';
       $('staff-add-form').reset();
+      naMb = new Set(); updateNaMb();
       await Promise.all([loadStaff(), loadAuthStatus()]);
       renderStaff();
     } catch (err) {
@@ -2065,7 +2175,8 @@
   }
 
   const ROLE_WORDS = { '': 'user', 일반: 'user', '일반 사용자': 'user', 일반사용자: 'user', 사용자: 'user', 직원: 'user', user: 'user',
-    슈퍼바이저: 'supervisor', supervisor: 'supervisor', 매니저: 'manager', manager: 'manager' };
+    슈퍼바이저: 'supervisor', supervisor: 'supervisor', 매니저: 'manager', manager: 'manager', '총괄 매니저': 'manager', 총괄매니저: 'manager', 총괄: 'manager',
+    '권역 매니저': 'region', 권역매니저: 'region', 권역: 'region', region: 'region' };
   const roleLabel = (r) => (ROLES.find(([v]) => v === r) || [, '?'])[1];
 
   $('bulk-template').addEventListener('click', async () => {
@@ -2077,11 +2188,12 @@
       ['점포', '선택', '아래 [사용 중인 점포] 이름을 그대로 적습니다. 비우면 점포 미지정', branches.find((b) => b.is_active)?.name || '본사'],
       ['입사일', '선택', '2024-01-02 형식 (2024.1.2, 24-1-2도 가능). 근태표 엑셀에 표시됩니다', '2024-01-02'],
       ...(FEATURE_JOB_GROUPS ? [['분류', '선택', '아래 [분류 목록] 이름을 그대로 적습니다 (직원 관리 → 직원 분류에서 만든 이름). 비우면 미지정', jobGroups[0]?.name || '판매']] : []),
-      ['권한', '선택', '일반 사용자 / 슈퍼바이저 / 매니저 중 하나. 비우면 일반 사용자. 슈퍼바이저는 점포 필수', '일반 사용자'],
+      ['권한', '선택', isHQ() ? '일반 사용자 / 슈퍼바이저 / 권역 매니저 / 총괄 매니저 중 하나. 비우면 일반 사용자. 슈퍼바이저는 점포 필수. 권역 매니저의 담당 점포는 등록 후 직원 목록에서 지정'
+        : '일반 사용자 / 슈퍼바이저 중 하나. 비우면 일반 사용자. 점포는 담당 점포 중에서 필수', '일반 사용자'],
       ['초기 비밀번호', '선택', '8자 이상. 비우면 10자리 무작위로 자동 생성', ''],
       [],
-      ['사용 중인 점포'],
-      ...branches.filter((b) => b.is_active).map((b) => [b.name]),
+      [isRegion() ? '사용 중인 점포 (담당 점포)' : '사용 중인 점포'],
+      ...scopeBranches().filter((b) => b.is_active).map((b) => [b.name]),
       ...(FEATURE_JOB_GROUPS ? [[], ['분류 목록'], ...jobGroups.map((g) => [g.name])] : []),
     ];
     // 아이디·비밀번호 칸은 텍스트 서식 (00123 같은 사번이 123으로 바뀌지 않게)
@@ -2144,8 +2256,9 @@
         const b = branches.find((x) => x.name === r.branchName);
         if (!b) e.push(`없는 점포 "${r.branchName}"`);
         else if (!b.is_active) e.push(`사용 중지된 점포 "${r.branchName}"`);
+        else if (isRegion() && !myScope.has(b.id)) e.push(`담당 점포가 아님 "${r.branchName}"`);
         else r.branchId = b.id;
-      }
+      } else if (isRegion()) e.push('점포 필수 (담당 점포 중에서)');
       r.jobId = null;
       if (r.jobText) {
         const g = jobGroups.find((x) => x.name === r.jobText);
@@ -2156,6 +2269,7 @@
       r.role = ROLE_WORDS[r.roleText.replace(/\s+/g, ' ')] || ROLE_WORDS[r.roleText.toLowerCase()];
       if (!r.role) e.push(`권한 "${r.roleText}"을(를) 알 수 없음`);
       else if (r.role === 'supervisor' && !r.branchId) e.push('슈퍼바이저는 점포 필수');
+      else if (!isHQ() && (r.role === 'manager' || r.role === 'region')) e.push('매니저 권한은 총괄 매니저만 지정');
       r.pwAuto = !r.pw;
       if (r.pwAuto) r.pw = randomPw();
       else if (r.pw.length < 8) e.push('비밀번호 8자 이상');
@@ -2369,7 +2483,7 @@
   }
 
   async function loadRetiredSummary() {
-    if (!me?.is_admin) return;
+    if (!isMgr()) return;
     const seq = ++retiredSeq;
     const { data, error } = await sb.rpc('retired_staff_summary');
     if (seq !== retiredSeq) return;
@@ -2386,7 +2500,7 @@
   const keepOver = (until) => !until || ymd(new Date()) >= until;
 
   function renderRetired() {
-    if (!me?.is_admin) return;
+    if (!isMgr()) return;
     const fb = $('r-branch').value;
     const q = $('r-search').value.trim();
     const list = staff.filter((s) => s.deleted_at && matchBranch(s.branch_id, fb) && (!q || s.name.includes(q)))
@@ -2412,7 +2526,7 @@
         <td>${keep}</td>
         <td class="actions">
           <button class="btn small" data-rview ${info && !info.first_date ? 'disabled title="출퇴근 기록이 없습니다"' : ''}>기록 보기</button>
-          <button class="btn small danger-outline" data-rpurge ${known ? '' : 'disabled'}>영구 삭제</button>
+          ${isHQ() ? `<button class="btn small danger-outline" data-rpurge ${known ? '' : 'disabled'}>영구 삭제</button>` : ''}
         </td>
       </tr>`;
     }).join('') || `<tr><td colspan="9" class="empty">${staff.some((s) => s.deleted_at) ? '조건에 맞는 퇴사자가 없습니다.' : '퇴사 처리된 직원이 없습니다.'}</td></tr>`;
@@ -2490,6 +2604,11 @@
     else if (e.target.matches('[data-rpurge]')) openPurge(s);
   });
 
+  $('staff-list').addEventListener('click', (e) => { // [담당 점포 N곳] (총괄 매니저)
+    if (!e.target.matches('[data-mb]')) return;
+    const s = staff.find((x) => x.id === e.target.closest('tr').dataset.id);
+    if (s) openMgrBranches(s);
+  });
   $('staff-list').addEventListener('click', async (e) => {
     if (!e.target.matches('[data-save]')) return;
     const tr = e.target.closest('tr');
@@ -2508,6 +2627,9 @@
     if (error) return alert(errMsg(error));
     e.target.textContent = '저장됨';
     setTimeout(() => { e.target.textContent = '저장'; }, 1500);
+    if (update.is_region_manager && !mgrBranches.get(tr.dataset.id)?.size) {
+      alert(`${name}님을 권역 매니저로 바꿨습니다.\n권한 칸의 [담당 점포 0곳] 버튼을 눌러 담당 점포를 지정해 주세요.`);
+    }
     if (tr.dataset.id === me.id) {
       me.name = name;
       me.branch_id = update.branch_id;
@@ -2729,7 +2851,8 @@
   }
 
   function renderBranches() {
-    $('branch-list').innerHTML = branches.map((b) => `
+    // 권역 매니저: 담당 점포만, 근무시간·특정일·위치만 수정 (사용 여부·삭제는 총괄)
+    $('branch-list').innerHTML = scopeBranches().map((b) => `
       <tr data-id="${b.id}">
         <td><input type="text" value="${esc(b.name)}" maxlength="30" data-field="name"></td>
         <td class="hours-cell">
@@ -2747,13 +2870,13 @@
         </td>
         <td><input type="number" class="radius-input" value="${b.radius_m ?? 100}" min="30" max="2000" step="10" data-field="radius_m"> m</td>
         <td class="num">${staff.filter((s) => s.branch_id === b.id && !s.deleted_at).length}명</td>
-        <td><input type="checkbox" data-field="is_active" ${b.is_active ? 'checked' : ''}></td>
+        <td><input type="checkbox" data-field="is_active" ${b.is_active ? 'checked' : ''} ${isHQ() ? '' : 'disabled title="사용 여부는 총괄 매니저만 바꿀 수 있습니다"'}></td>
         <td class="actions">
           <button class="btn small" data-bsave>저장</button>
           <button class="btn small" data-bpick>지도에서 선택</button>
-          <button class="btn small" data-bdel>삭제</button>
+          ${isHQ() ? '<button class="btn small" data-bdel>삭제</button>' : ''}
         </td>
-      </tr>`).join('') || '<tr><td colspan="7" class="empty">등록된 점포가 없습니다. 위에서 점포를 추가하세요.</td></tr>';
+      </tr>`).join('') || `<tr><td colspan="7" class="empty">${isHQ() ? '등록된 점포가 없습니다. 위에서 점포를 추가하세요.' : '담당 점포가 없습니다. 총괄 매니저에게 담당 점포 지정을 요청하세요.'}</td></tr>`;
   }
 
   $('branch-form').addEventListener('submit', async (e) => {
@@ -2807,8 +2930,7 @@
       if (me.branch_id === id) {
         me.branch = { name, lat: update.lat, lng: update.lng, radius_m: radius, work_start: workStart, work_end: workEnd };
         setUserLabel();
-        startGps();
-        setupOvertimeForm();
+        if (!isMgr()) { startGps(); setupOvertimeForm(); }
       }
     } else if (e.target.matches('[data-bgeo]')) {
       // 주소 → 좌표 (OpenStreetMap 무료 검색, 키 불필요). 저장은 [저장]을 눌러야 반영

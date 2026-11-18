@@ -320,9 +320,16 @@
             <select id="na-role">
               <option value="user">일반 사용자</option>
               <option value="supervisor">슈퍼바이저</option>
-              <option value="manager">매니저</option>
+              <option value="region">권역 매니저</option>
+              <option value="manager">총괄 매니저</option>
             </select>
           </label>
+          <!-- 권한이 '권역 매니저'일 때만: 담당 점포 고르기 (총괄 매니저만 보임) -->
+          <div id="na-mb" class="na-mb" hidden>
+            <span class="na-mb-label">담당 점포 <b class="req">필수</b></span>
+            <button type="button" class="btn small" id="na-mb-btn">담당 점포 선택</button>
+            <span id="na-mb-names" class="muted small"></span>
+          </div>
           <button type="submit" class="btn primary">직원 추가</button>
         </form>
         <p id="na-msg" class="msg" hidden></p>
@@ -455,7 +462,7 @@
 
       <div id="sub-branches" class="card" data-group="branches" hidden>
         <div class="card-head"><h2>점포 관리</h2></div>
-        <form id="branch-form" class="filters">
+        <form id="branch-form" class="filters hq-total" hidden>
           <label>새 점포 이름 <input type="text" id="branch-name" maxlength="30" required placeholder="예) 강남점"></label>
           <button type="submit" class="btn primary">점포 추가</button>
         </form>
@@ -518,6 +525,26 @@
         <button type="submit" class="btn primary">초기화</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- (총괄 매니저) 권역 매니저 담당 점포 지정 -->
+  <dialog id="mb-dialog" class="mb-dialog">
+    <div class="dialog-body">
+      <h3 id="mb-title">담당 점포 지정</h3>
+      <p class="muted small">체크한 점포의 근태·초과근무·직원·점포 설정을 이 권역 매니저가 관리합니다. 다른 권역 점포도 함께 고를 수 있습니다.</p>
+      <div class="mb-tools">
+        <input type="search" id="mb-search" placeholder="점포 이름 검색" autocomplete="off">
+        <button type="button" class="btn small ghost" id="mb-all">보이는 점포 모두</button>
+        <button type="button" class="btn small ghost" id="mb-none">모두 해제</button>
+      </div>
+      <div id="mb-list" class="mb-list"></div>
+      <div class="dialog-actions">
+        <span class="muted small" id="mb-count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="mb-cancel">취소</button>
+        <button type="button" class="btn primary" id="mb-save">저장</button>
+      </div>
+    </div>
   </dialog>
 
   <!-- (매니저) 퇴사자 영구 삭제 -->
