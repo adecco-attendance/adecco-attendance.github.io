@@ -1248,7 +1248,7 @@
     }).join('');
     tbody.innerHTML = rows
       ? rows + `<tr class="total"><td>합계</td><td class="num">${total.in}</td><td class="num">${total.working}</td><td class="num">${total.out}</td></tr>`
-      : '<tr><td colspan="4" class="empty">등록된 점포가 없습니다.</td></tr>';
+      : `<tr><td colspan="4" class="empty">${me?.is_admin ? '등록된 점포가 없습니다. 관리자 메뉴 → 점포 관리에서 추가하세요.' : '담당 점포가 없습니다.'}</td></tr>`;
     // 출근자 명단 접기란: 펼침 상태는 새로고침해도 유지 (details 요소는 그대로 두고 내용만 바꿈)
     $('present-box').hidden = !total.in; // 출근 기록이 없으면 명단 접기란도 숨김
     $('present-head').innerHTML = `출근자 명단 <b>${total.in}명</b> <span class="muted">· 근무 중 ${total.working} · 퇴근 ${total.out}</span>`;

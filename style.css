@@ -260,7 +260,11 @@ tr.zero td { color: var(--muted); }
 .absent { white-space: normal; min-width: 160px; color: var(--muted); font-size: 13px; }
 td.num { font-variant-numeric: tabular-nums; }
 /* 오늘 지점별 현황: 출근자 명단·퇴근 미기록 접기란 */
-.today-wrap > table { max-width: 620px; }
+/* 점포별 출근 현황: 카드 폭을 꽉 채우고, 점포 40% · 숫자 칸 3개 20%씩 (숫자는 오른쪽 정렬 → 퇴근 칸이 [새로고침] 버튼 아래 끝선에 맞음) */
+.today-wrap > table { width: 100%; table-layout: fixed; }
+.today-wrap th:first-child { width: 40%; }
+.today-wrap th:not(:first-child), .today-wrap td.num { text-align: right; padding-right: 14px; }
+.today-wrap td.empty { text-align: center; }
 #sub-today .fold-box.warn { margin: 0 0 12px; }
 #sub-today tr.zero td { color: var(--muted); }
 #sub-today tr.zero td:first-child { color: var(--text); }
