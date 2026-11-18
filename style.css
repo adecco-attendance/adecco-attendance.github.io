@@ -134,6 +134,15 @@ tr.inactive td { background: #fafafa; }
 td.actions { display: flex; gap: 4px; flex-wrap: wrap; }
 tr.day-head td { background: #f1f5fd; color: var(--text); font-weight: 600; font-size: 13px; border-top: 2px solid #d6e0f5; }
 tr.day-head .day-meta { color: var(--muted); font-weight: 400; margin-left: 8px; }
+/* 날짜별 접기 + 긴 목록 [더 보기] */
+tr.day-head { cursor: pointer; user-select: none; }
+tr.day-head:hover td { background: #e7eefc; }
+.day-caret { display: inline-block; width: 16px; color: var(--muted); transition: transform .15s; }
+tr.day-head.open .day-caret { transform: rotate(90deg); }
+tr.more-row td { text-align: center; padding: 10px 8px; background: #fafbfd; }
+tr.more-row .btn { margin-left: 6px; }
+.list-tools { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin: 4px 0 6px; }
+.list-tools .muted { margin-right: auto; }
 /* 초과근무 */
 .filters label.grow { flex: 1 1 220px; }
 .st { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
@@ -250,7 +259,29 @@ dialog.a2hs-dialog { width: min(440px, calc(100vw - 24px)); max-height: calc(100
 tr.zero td { color: var(--muted); }
 .absent { white-space: normal; min-width: 160px; color: var(--muted); font-size: 13px; }
 td.num { font-variant-numeric: tabular-nums; }
+/* 오늘 지점별 현황: 출근자 명단·퇴근 미기록 접기란 */
+.today-wrap > table { max-width: 620px; }
+#sub-today .fold-box.warn { margin: 0 0 12px; }
+#sub-today tr.zero td { color: var(--muted); }
+#sub-today tr.zero td:first-child { color: var(--text); }
+.fold-box { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafbfd; }
+.fold-box > summary { cursor: pointer; padding: 11px 14px; list-style: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.fold-box > summary::-webkit-details-marker { display: none; }
+.fold-box > summary::before { content: '▸'; color: var(--muted); transition: transform .15s; }
+.fold-box[open] > summary::before { transform: rotate(90deg); }
+.fold-box[open] > summary { border-bottom: 1px solid var(--line); }
+.fold-box.warn { background: #fff8f1; border-color: #fbd5b0; }
+.fold-box.warn > summary { color: #9a3412; }
+.fold-box.warn > .table-wrap, .fold-box.warn > p { padding: 0 14px; }
+.fold-box.warn > p { padding-bottom: 12px; }
+.fold-list { padding: 10px 14px 12px; display: grid; gap: 12px 20px; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+.fold-branch { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.fold-names { display: flex; flex-wrap: wrap; gap: 6px; }
+.name-chip { background: #fff; border: 1px solid #bcd0fb; border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+.name-chip .chip-time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.name-chip.done { border-color: var(--line); background: #f3f4f6; color: var(--muted); }
 tr.total td { font-weight: 600; border-top: 2px solid var(--line); }
+tr.total.top td { border-top: 0; border-bottom: 2px solid var(--line); background: #f8fafc; }
 .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 12px; }
 
 /* 다이얼로그 */
@@ -296,9 +327,27 @@ dialog::backdrop { background: rgba(15, 20, 35, .45); }
   table.stack tr.day-head td { display: block; text-align: left; background: transparent; border: 0; }
   table.stack tr.total { background: #f6f8fb; }
   table.stack tr.total td { border-top: 0; }
+  table.stack tr.total.top td { border-bottom: 0; background: transparent; }
+  table.stack tr.more-row { background: #fafbfd; }
+  table.stack tr.more-row td { display: block; text-align: center; border: 0; }
+  table.stack tr.more-row .muted { display: block; margin-bottom: 6px; }
   table.stack tr.inactive td { background: transparent; }
   table.stack tr.inactive { background: #fafafa; }
+  /* 요약 카드 (개인별·일자별·초과근무): 핵심만 2줄, 누르면 나머지 칸 펼침 */
+  table.stack tr.rec { display: flex; flex-direction: column; padding: 9px 12px; margin-bottom: 6px; }
+  table.stack tr.rec > td.m-sum { display: block; order: -1; text-align: left; cursor: pointer; padding: 0; overflow: visible; }
+  table.stack tr.rec > td.m-sum::before { content: none; }
+  table.stack tr.rec:not(.open) > td:not(.m-sum) { display: none; }
+  table.stack tr.rec.open > td.m-sum { border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px; }
+  table.stack tr.rec.open .ms-caret { transform: rotate(180deg); }
 }
+td.m-sum { display: none; }
+.ms-top { display: flex; align-items: center; gap: 6px; min-height: 30px; }
+.ms-top > b { font-size: 15px; }
+.ms-sub { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ms-right { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+.ms-caret { color: var(--muted); font-size: 12px; width: 16px; text-align: center; transition: transform .15s; }
+.ms-line { font-size: 13px; color: #374151; margin-top: 2px; line-height: 1.5; }
 
 @media (max-width: 600px) {
   .topbar { gap: 8px; }
@@ -306,6 +355,8 @@ dialog::backdrop { background: rgba(15, 20, 35, .45); }
   .tabs { width: 100%; gap: 2px; }
   .tabs .tab { flex: 1 1 0; min-width: 0; padding: 7px 2px; font-size: 14px; text-align: center; }
   .tabs .tab[hidden] { display: none; }
+  /* 오늘 지점별 현황: 지점 이름이 길면 줄바꿈 */
+  #sub-today td:first-child { white-space: normal; word-break: keep-all; }
   .user-menu { width: 100%; margin-left: 0; justify-content: flex-end; }
   .now-time { font-size: 36px; }
   .filters > label { flex: 1 1 140px; }

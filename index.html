@@ -144,35 +144,53 @@
     <!-- 근태 관리(매니저·슈퍼바이저) / 관리자 메뉴(매니저만): 같은 화면 안에서 위 탭에 따라 작은 탭 줄이 바뀜 -->
     <section id="admin-view" class="container" hidden>
       <div class="subtabs" data-for="admin">
-        <button class="subtab active" data-sub="records">출퇴근 기록</button>
+        <button class="subtab active" data-sub="today">점포별 출근 현황</button>
+        <button class="subtab" data-sub="personal">개인별 근무현황</button>
+        <button class="subtab" data-sub="daily">일자별 근무현황</button>
         <button class="subtab" data-sub="overtime">초과근무 승인<span id="ot-badge" class="ot-badge" hidden></span></button>
         <span id="manager-note" class="muted small" hidden></span>
       </div>
       <div class="subtabs" data-for="hq" hidden>
-        <!-- 자주 쓰는 순서: 직원 목록 → 지원 근무 → 직원 등록 → (직원 분류) → 지점 관리 → 퇴사자 관리 -->
+        <!-- 자주 쓰는 순서: 직원 목록 → 지원 근무 → 직원 등록 → (직원 분류) → 점포 관리 → 퇴사자 관리 -->
         <button class="subtab active" data-sub="staff">직원 목록</button>
         <button class="subtab" data-sub="support">지원 근무</button>
         <button class="subtab" data-sub="staff-add">직원 등록</button>
         <button class="subtab feat-job" data-sub="job">직원 분류</button>
-        <button class="subtab" data-sub="branches">지점 관리</button>
+        <button class="subtab" data-sub="branches">점포 관리</button>
         <button class="subtab" data-sub="retired">퇴사자 관리<span id="retired-badge" class="ot-badge muted-badge" hidden></span></button>
       </div>
 
-      <div id="sub-today" class="card" data-group="records">
+      <div id="sub-today" class="card" data-group="today">
         <div class="card-head">
-          <h2>오늘 지점별 현황</h2>
+          <h2>오늘 점포별 출근 현황</h2>
           <button class="btn small" id="today-refresh">새로고침</button>
         </div>
-        <div class="table-wrap">
+        <!-- 퇴근 미기록: 최근 7일(오늘 제외) 출근만 있고 퇴근이 없는 기록. 있을 때만 표 위에 보임 -->
+        <details id="missout-box" class="fold-box warn" hidden>
+          <summary id="missout-head"></summary>
+          <div class="table-wrap">
+            <table class="stack">
+              <thead><tr><th>근무일</th><th>점포</th><th>이름</th><th>출근</th><th></th></tr></thead>
+              <tbody id="missout-list"></tbody>
+            </table>
+          </div>
+          <p class="muted small" style="margin:6px 0 0">퇴근 시간이 비어 있으면 그날 근무시간이 0으로 계산됩니다. 직원에게 확인한 뒤 [퇴근 입력]으로 채워 주세요.</p>
+        </details>
+        <div class="table-wrap today-wrap">
           <table>
-            <thead><tr><th>지점</th><th>직원</th><th>출근</th><th>근무 중</th><th>퇴근</th><th>미출근</th><th>미출근자</th></tr></thead>
+            <thead><tr><th>점포</th><th>출근</th><th>근무 중</th><th>퇴근</th></tr></thead>
             <tbody id="today-summary"></tbody>
           </table>
         </div>
+        <!-- 오늘 출근자 명단: 평소엔 접어 두고 필요할 때 펼침 (점포별로 묶음) -->
+        <details id="present-box" class="fold-box" hidden>
+          <summary id="present-head"></summary>
+          <div id="present-list" class="fold-list"></div>
+        </details>
       </div>
 
       <!-- 개인별 근무현황 -->
-      <div id="sub-personal" class="card" data-group="records">
+      <div id="sub-personal" class="card" data-group="personal" hidden>
         <div class="card-head">
           <h2>개인별 근무현황</h2>
           <button type="button" class="btn small" id="summary-csv-btn">개인별 근무현황 엑셀 다운로드</button>
@@ -181,7 +199,7 @@
           <label>월 선택 <input type="month" id="p-month"></label>
           <label>시작일 <input type="date" id="p-from" required></label>
           <label>종료일 <input type="date" id="p-to" required></label>
-          <label>지점
+          <label>점포
             <select id="p-branch"></select>
           </label>
           <label class="feat-job">분류
@@ -197,7 +215,7 @@
         </form>
         <div class="table-wrap">
           <table class="stack">
-            <thead><tr><th>지점</th><th>이름</th><th>근무일</th><th>정규 근무</th><th>초과근무(승인)</th><th>총 근무시간</th><th>일평균</th><th>미퇴근</th><th>기록 수정</th></tr></thead>
+            <thead><tr><th>점포</th><th>이름</th><th>근무일</th><th>정규 근무</th><th>초과근무(승인)</th><th>총 근무시간</th><th>일평균</th><th>미퇴근</th><th>기록 수정</th></tr></thead>
             <tbody id="staff-summary"></tbody>
           </table>
         </div>
@@ -205,7 +223,7 @@
       </div>
 
       <!-- 일자별 근무현황 -->
-      <div id="sub-daily" class="card" data-group="records">
+      <div id="sub-daily" class="card" data-group="daily" hidden>
         <div class="card-head">
           <h2>일자별 근무현황</h2>
           <button type="button" class="btn small" id="csv-btn">일자별 근무현황 엑셀 다운로드</button>
@@ -214,7 +232,7 @@
           <label>월 선택 <input type="month" id="d-month"></label>
           <label>시작일 <input type="date" id="d-from" required></label>
           <label>종료일 <input type="date" id="d-to" required></label>
-          <label>지점
+          <label>점포
             <select id="d-branch"></select>
           </label>
           <label class="feat-job">분류
@@ -229,9 +247,15 @@
           <button type="submit" class="btn primary">조회</button>
           <button type="button" class="btn" id="add-record-btn">기록 추가</button>
         </form>
+        <!-- 날짜별 접기: 처음엔 가장 최근 날짜만 펼침 -->
+        <div class="list-tools" id="d-tools" hidden>
+          <span class="muted small" id="d-tools-note">날짜 줄을 누르면 펼치거나 접습니다.</span>
+          <button type="button" class="btn small ghost" id="d-open-all">모두 펼치기</button>
+          <button type="button" class="btn small ghost" id="d-close-all">모두 접기</button>
+        </div>
         <div class="table-wrap">
           <table class="stack">
-            <thead><tr><th>지점</th><th>이름</th><th>출근</th><th>퇴근</th><th>정규 근무</th><th>초과근무(승인)</th><th>비고</th><th>수정이력</th><th></th></tr></thead>
+            <thead><tr><th>점포</th><th>이름</th><th>출근</th><th>퇴근</th><th>정규 근무</th><th>초과근무(승인)</th><th>비고</th><th>수정이력</th><th></th></tr></thead>
             <tbody id="admin-records"></tbody>
           </table>
         </div>
@@ -248,7 +272,7 @@
           <label>월 선택 <input type="month" id="o-month"></label>
           <label>시작일 <input type="date" id="o-from" required></label>
           <label>종료일 <input type="date" id="o-to" required></label>
-          <label>지점
+          <label>점포
             <select id="o-branch"></select>
           </label>
           <label class="feat-job">분류
@@ -273,7 +297,7 @@
         </form>
         <div class="table-wrap">
           <table class="stack">
-            <thead><tr><th>근무일</th><th>지점</th><th>이름</th><th>신청 시간</th><th>구분</th><th>사유</th><th>실제 출퇴근</th><th>인정 시간</th><th>상태</th><th>처리</th></tr></thead>
+            <thead><tr><th>근무일</th><th>점포</th><th>이름</th><th>신청 시간</th><th>구분</th><th>사유</th><th>실제 출퇴근</th><th>인정 시간</th><th>상태</th><th>처리</th></tr></thead>
             <tbody id="ot-list"></tbody>
           </table>
         </div>
@@ -288,7 +312,7 @@
             <span class="id-input"><input id="na-id" required maxlength="30" pattern="[A-Za-z0-9._\-]{2,30}" placeholder="예) hong" title="영문·숫자·._- 2~30자 (대문자는 소문자로 저장됩니다)" autocapitalize="off" spellcheck="false"><span class="muted small">@<span class="email-domain"></span></span></span>
           </label>
           <label>이름 <input id="na-name" required maxlength="30" placeholder="예) 홍길동"></label>
-          <label>지점 <select id="na-branch"></select></label>
+          <label>점포 <select id="na-branch"></select></label>
           <label class="feat-job">분류 <select id="na-job"><option value="">(미지정)</option></select></label>
           <label>입사일 <input id="na-hire" type="date"></label>
           <label>초기 비밀번호 <input id="na-pw" type="text" required minlength="8" placeholder="8자 이상" autocomplete="off"></label>
@@ -320,7 +344,7 @@
           <p id="bulk-summary" class="msg"></p>
           <div class="table-wrap bulk-wrap">
             <table>
-              <thead><tr><th>행</th><th>이름</th><th>아이디</th><th>지점</th><th>입사일</th><th class="feat-job">분류</th><th>권한</th><th>초기 비밀번호</th><th>검사·결과</th></tr></thead>
+              <thead><tr><th>행</th><th>이름</th><th>아이디</th><th>점포</th><th>입사일</th><th class="feat-job">분류</th><th>권한</th><th>초기 비밀번호</th><th>검사·결과</th></tr></thead>
               <tbody id="bulk-list"></tbody>
             </table>
           </div>
@@ -334,10 +358,10 @@
           <b>사용 방법</b>
           <ol>
             <li>[양식 내려받기]로 받은 파일에 직원 명단을 적습니다. 엑셀(.xlsx)이나 CSV 모두 됩니다.</li>
-            <li>파일을 위 상자에 끌어다 놓거나 [명단 업로드]로 올리면 등록 전에 <b>오류(중복 아이디, 없는 지점 등)를 먼저 검사</b>합니다.</li>
+            <li>파일을 위 상자에 끌어다 놓거나 [명단 업로드]로 올리면 등록 전에 <b>오류(중복 아이디, 없는 점포 등)를 먼저 검사</b>합니다.</li>
             <li>[등록]을 누르면 오류 없는 직원만 등록하고, 끝나면 <b>[결과 파일 내려받기]</b>로 아이디·초기 비밀번호 목록을 받습니다.</li>
           </ol>
-          <b>칸 설명</b> · 이름(필수) · 아이디(필수, 영문 소문자·숫자·._- 2~30자) · 지점(지점 관리에 있는 이름 그대로) · 입사일(예: 2024-01-02, 선택) · 분류(직원 분류에 있는 이름 그대로, 선택)
+          <b>칸 설명</b> · 이름(필수) · 아이디(필수, 영문 소문자·숫자·._- 2~30자) · 점포(점포 관리에 있는 이름 그대로) · 입사일(예: 2024-01-02, 선택) · 분류(직원 분류에 있는 이름 그대로, 선택)
           · 권한(일반 사용자 / 슈퍼바이저 / 매니저, 비우면 일반 사용자) · 초기 비밀번호(8자 이상, <b>비우면 자동 생성</b>)<br>
           ※ 결과 파일에는 비밀번호가 들어 있으니 직원에게 전달한 뒤 삭제하세요.
         </div>
@@ -345,7 +369,7 @@
 
       <div id="sub-job" class="card" data-group="job" hidden>
         <div class="card-head feat-job"><h2>직원 분류</h2></div>
-        <p class="muted small feat-job" style="margin:0 0 8px">같은 지점에서도 하는 일이 다른 직원을 나눠 볼 때 씁니다 (예: 판매 / 물류 / 사무). 모든 지점이 같은 목록을 쓰고, 직원마다 하나를 지정합니다.</p>
+        <p class="muted small feat-job" style="margin:0 0 8px">같은 점포에서도 하는 일이 다른 직원을 나눠 볼 때 씁니다 (예: 판매 / 물류 / 사무). 모든 점포가 같은 목록을 쓰고, 직원마다 하나를 지정합니다.</p>
         <div class="job-row feat-job">
           <div id="job-list" class="sh-chips"></div>
           <form id="job-form" class="job-form">
@@ -357,10 +381,10 @@
 
       <div id="sub-support" class="card" data-group="support" hidden>
         <div class="card-head"><h2>지원 근무</h2></div>
-        <p class="muted small" style="margin:0 0 8px">직원이 정해진 기간 동안 다른 지점에서 근무할 때 미리 등록합니다. 그 기간에는 <b>지원 지점 기준</b>으로 GPS 출퇴근·정규시간·초과근무 승인이 처리되고, 기간이 끝나면 자동으로 원래 지점으로 돌아갑니다.</p>
+        <p class="muted small" style="margin:0 0 8px">직원이 정해진 기간 동안 다른 점포에서 근무할 때 미리 등록합니다. 그 기간에는 <b>지원 점포 기준</b>으로 GPS 출퇴근·정규시간·초과근무 승인이 처리되고, 기간이 끝나면 자동으로 원래 점포로 돌아갑니다.</p>
         <form id="sp-form" class="filters">
           <label>직원 <select id="sp-user" required></select></label>
-          <label>지원 지점 <select id="sp-branch" required></select></label>
+          <label>지원 점포 <select id="sp-branch" required></select></label>
           <label>시작일 <input type="date" id="sp-start" required></label>
           <label>종료일 <input type="date" id="sp-end" required></label>
           <label class="grow">메모 <input type="text" id="sp-note" maxlength="50" placeholder="예) 연말 행사 지원"></label>
@@ -369,7 +393,7 @@
         <p id="sp-msg" class="msg" hidden></p>
         <div class="table-wrap">
           <table class="stack">
-            <thead><tr><th>기간</th><th>직원</th><th>원래 지점 → 지원 지점</th><th>메모</th><th>상태</th><th>관리</th></tr></thead>
+            <thead><tr><th>기간</th><th>직원</th><th>원래 점포 → 지원 점포</th><th>메모</th><th>상태</th><th>관리</th></tr></thead>
             <tbody id="sp-list"></tbody>
           </table>
         </div>
@@ -378,7 +402,7 @@
       <div id="sub-staff" class="card" data-group="staff" hidden>
         <div class="card-head"><h2>직원 목록</h2></div>
         <div class="filters">
-          <label>지점
+          <label>점포
             <select id="s-branch"></select>
           </label>
           <label class="feat-job">분류
@@ -393,12 +417,12 @@
         </div>
         <div class="table-wrap">
           <table class="stack">
-            <thead><tr><th><input type="checkbox" id="s-check-all" title="보이는 직원 모두 선택"></th><th>이름</th><th>소속 지점</th><th class="feat-job">분류</th><th>입사일</th><th>아이디</th><th>상태</th><th>접속</th><th>최근 로그인</th><th>권한</th><th>관리</th></tr></thead>
+            <thead><tr><th><input type="checkbox" id="s-check-all" title="보이는 직원 모두 선택"></th><th>이름</th><th>소속 점포</th><th class="feat-job">분류</th><th>입사일</th><th>아이디</th><th>상태</th><th>접속</th><th>최근 로그인</th><th>권한</th><th>관리</th></tr></thead>
             <tbody id="staff-list"></tbody>
           </table>
         </div>
         <p class="muted small">
-          지점을 옮겨도 이전 출퇴근 기록은 기존 지점 기록으로 남습니다.
+          점포를 옮겨도 이전 출퇴근 기록은 기존 점포 기록으로 남습니다.
           퇴사자는 먼저 <b>비활성화</b>하세요. 로그인이 막히고 근태 기록은 그대로 보존되며, 오늘 현황·개인별 근무 현황의 미출근자에서도 빠집니다.
           비활성화된 직원은 <b>삭제</b>할 수 있습니다. 로그인 계정만 지워지고 이름과 근태 기록은 "퇴사"로 남으며, 관리자 메뉴의 <b>[퇴사자 관리]</b>로 옮겨집니다.
         </p>
@@ -407,7 +431,7 @@
       <div id="sub-retired" class="card" data-group="retired" hidden>
         <div class="card-head"><h2>퇴사자 관리</h2></div>
         <div class="filters">
-          <label>마지막 소속 지점
+          <label>마지막 소속 점포
             <select id="r-branch"></select>
           </label>
           <label class="grow">이름 검색 <input type="search" id="r-search" placeholder="예) 홍길동"></label>
@@ -430,14 +454,14 @@
       </div>
 
       <div id="sub-branches" class="card" data-group="branches" hidden>
-        <div class="card-head"><h2>지점 관리</h2></div>
+        <div class="card-head"><h2>점포 관리</h2></div>
         <form id="branch-form" class="filters">
-          <label>새 지점 이름 <input type="text" id="branch-name" maxlength="30" required placeholder="예) 강남점"></label>
-          <button type="submit" class="btn primary">지점 추가</button>
+          <label>새 점포 이름 <input type="text" id="branch-name" maxlength="30" required placeholder="예) 강남점"></label>
+          <button type="submit" class="btn primary">점포 추가</button>
         </form>
         <div class="table-wrap">
           <table class="stack">
-            <thead><tr><th>지점명</th><th>정규 근무시간</th><th>주소 / 위치 (위도, 경도)</th><th>허용 반경</th><th>소속 직원</th><th>사용</th><th>관리</th></tr></thead>
+            <thead><tr><th>점포명</th><th>정규 근무시간</th><th>주소 / 위치 (위도, 경도)</th><th>허용 반경</th><th>소속 직원</th><th>사용</th><th>관리</th></tr></thead>
             <tbody id="branch-list"></tbody>
           </table>
         </div>
@@ -445,19 +469,19 @@
         <p class="muted small"><b>특정일 근무시간</b>: 평소와 다르게 근무하는 날(예: 평소 09:00~18:00인데 그날만 14:00~18:00)은 '정규 근무시간' 칸의 <b>[+ 특정일]</b>로 등록하세요. 그 날짜만 이 시간으로 정규 근무·초과근무를 계산합니다. 등록한 날은 칸 아래에 표시되고, ✕로 지울 수 있습니다.</p>
 
         <div class="help-box">
-          <b>지점 위치 등록 방법 (GPS 출퇴근)</b>
+          <b>점포 위치 등록 방법 (GPS 출퇴근)</b>
           <ol>
             <li><b>주소</b> 칸에 도로명 주소를 입력하고 <b>[주소로 찾기]</b> → 좌표가 자동으로 들어갑니다 (예: <code>서울특별시 중구 세종대로 110</code>)</li>
-            <li><b>[지도에서 선택]</b>을 눌러 핀이 지점 건물 위에 있는지 확인하고, 다르면 <b>건물을 클릭</b>해 옮긴 뒤 <b>[이 위치로 설정]</b> → <b>[저장]</b></li>
+            <li><b>[지도에서 선택]</b>을 눌러 핀이 점포 건물 위에 있는지 확인하고, 다르면 <b>건물을 클릭</b>해 옮긴 뒤 <b>[이 위치로 설정]</b> → <b>[저장]</b></li>
             <li>주소를 못 찾거나 건물이 아닌 도로 위치로 잡히면 경고가 뜨고 지도가 열립니다. 지도에서 건물을 직접 찍어 주세요</li>
             <li>위치가 어긋나면: 구글 지도에서 건물을 <b>마우스 오른쪽 클릭</b>(휴대폰은 길게 누르기) → 맨 위 <code>37.5665, 126.9780</code> 같은 숫자를 눌러 복사 → <b>위치</b> 칸에 붙여넣고 저장</li>
           </ol>
-          위치를 등록한 지점의 직원은 지점에서 <b>허용 반경 안</b>에 있을 때만 출근·퇴근할 수 있습니다.
+          위치를 등록한 점포의 직원은 점포에서 <b>허용 반경 안</b>에 있을 때만 출근·퇴근할 수 있습니다.
           위치 칸을 비워 두면 위치 확인 없이 어디서나 출퇴근할 수 있습니다.
         </div>
         <p class="muted small">
-          더 이상 쓰지 않는 지점은 <b>사용</b>을 해제하세요. (직원 배정 목록에서 숨겨지고 과거 기록은 유지됩니다)
-          소속 직원이나 출퇴근 기록이 있는 지점은 삭제할 수 없습니다.
+          더 이상 쓰지 않는 점포는 <b>사용</b>을 해제하세요. (직원 배정 목록에서 숨겨지고 과거 기록은 유지됩니다)
+          소속 직원이나 출퇴근 기록이 있는 점포는 삭제할 수 없습니다.
         </p>
       </div>
     </section>
@@ -516,7 +540,7 @@
     </form>
   </dialog>
 
-  <!-- (매니저) 지점 위치 지도에서 선택 -->
+  <!-- (매니저) 점포 위치 지도에서 선택 -->
   <dialog id="notice-dialog" class="notice-dialog">
     <form id="notice-form" method="dialog" class="dialog-body" autocomplete="off">
       <h3 id="notice-dlg-title">새 공지 작성</h3>
@@ -554,7 +578,7 @@
 
   <dialog id="map-dialog" class="map-dialog">
     <div class="dialog-body">
-      <h3 id="map-title">지점 위치 선택</h3>
+      <h3 id="map-title">점포 위치 선택</h3>
       <div class="addr-row">
         <input type="text" id="map-addr" placeholder="주소를 입력하고 [주소로 이동]">
         <button type="button" class="btn small" id="map-search">주소로 이동</button>

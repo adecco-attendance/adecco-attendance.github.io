@@ -21,7 +21,7 @@
 
   let me = null;          // 로그인한 사용자 profile
   let staff = [];         // (관리자) 직원 목록
-  let branches = [];      // 지점 목록
+  let branches = [];      // 점포 목록
   let editingId = null;   // 수정 중인 기록 id (null 이면 신규)
 
   // ---------------------------------------------------------------
@@ -54,12 +54,12 @@
     return end ? end - new Date(row.clock_in) : 0;
   }
 
-  // ---- 근무시간 집계: 정규(지점 근무시간 안) + 승인된 초과근무(실제 근무와 겹치는 부분) ----
+  // ---- 근무시간 집계: 정규(점포 근무시간 안) + 승인된 초과근무(실제 근무와 겹치는 부분) ----
   const kstAt = (dateStr, time) => new Date(`${dateStr}T${String(time).slice(0, 5)}:00+09:00`).getTime();
   const overlapMs = (s1, e1, s2, e2) => Math.max(0, Math.min(e1, e2) - Math.max(s1, s2));
   const tmLabel = (t) => (t ? String(t).slice(0, 5) : '');
 
-  // 지점별 특정일 근무시간 (branch_special_hours): `${branch_id}|${날짜}` → { work_start, work_end, note }
+  // 점포별 특정일 근무시간 (branch_special_hours): `${branch_id}|${날짜}` → { work_start, work_end, note }
   let specialHours = new Map();
   async function loadSpecialHours() {
     const since = shiftDate(ymd(new Date()), -400);
@@ -67,7 +67,7 @@
     if (error) return;
     specialHours = new Map(data.map((h) => [`${h.branch_id}|${h.work_date}`, h]));
   }
-  // 지원 근무 (support_assignments): 직원이 기간 동안 다른 지점에서 근무. 직원은 본인 것만 받아 옴
+  // 지원 근무 (support_assignments): 직원이 기간 동안 다른 점포에서 근무. 직원은 본인 것만 받아 옴
   let supports = [];
   async function loadSupports() {
     if (!me) return;
@@ -79,7 +79,7 @@
     supports = data;
   }
   const supportOn = (uid, date) => supports.find((s) => s.user_id === uid && s.start_date <= date && date <= s.end_date) || null;
-  // 그날 내가 근무하는 지점 (지원 근무면 지원 지점). { id, name, lat, lng, radius_m, work_start, work_end, support }
+  // 그날 내가 근무하는 점포 (지원 근무면 지원 점포). { id, name, lat, lng, radius_m, work_start, work_end, support }
   function myBranchOn(date) {
     const s = me ? supportOn(me.id, date) : null;
     if (s?.to_branch) return { ...s.to_branch, id: s.to_branch_id, support: s };
@@ -87,14 +87,14 @@
   }
   const supportLabel = (s) => `${s.start_date === s.end_date ? dateLabel(s.start_date) : `${dateLabel(s.start_date)}~${dateLabel(s.end_date)}`}`;
 
-  // 그 날짜의 지점 정규 근무시간 (특정일이 있으면 그 시간). b: 지점 정보(평소 시간)
+  // 그 날짜의 점포 정규 근무시간 (특정일이 있으면 그 시간). b: 점포 정보(평소 시간)
   function hoursFor(branchId, date, b) {
     const sp = branchId != null ? specialHours.get(`${branchId}|${date}`) : null;
     if (sp) return { start: sp.work_start, end: sp.work_end, special: true, note: sp.note || '' };
     return { start: b?.work_start || null, end: b?.work_end || null, special: false, note: '' };
   }
 
-  // 정규 근무시간: 기록 당시 지점의 정규시간(그날 특정일 시간 우선) 안에서 실제로 근무한 시간 (지점 정보 없으면 실제 전체)
+  // 정규 근무시간: 기록 당시 점포의 정규시간(그날 특정일 시간 우선) 안에서 실제로 근무한 시간 (점포 정보 없으면 실제 전체)
   function regularMs(row) {
     if (!row.clock_in || !row.clock_out) return 0;
     const s = +new Date(row.clock_in);
@@ -151,8 +151,8 @@
     if (/Invalid login credentials/i.test(m)) return '아이디 또는 비밀번호가 올바르지 않습니다.';
     if (/attendance_user_day_unique/.test(m)) return '해당 직원은 그 날짜에 이미 기록이 있습니다.';
     if (/attendance_time_order/.test(m)) return '퇴근 시간이 출근 시간보다 빠릅니다.';
-    if (/branches_name_key/.test(m)) return '같은 이름의 지점이 이미 있습니다.';
-    if (/foreign key/i.test(m) && /branch/i.test(m)) return '소속 직원이나 출퇴근 기록이 있는 지점은 삭제할 수 없습니다. 대신 "사용"을 해제하세요.';
+    if (/branches_name_key/.test(m)) return '같은 이름의 점포가 이미 있습니다.';
+    if (/foreign key/i.test(m) && /branch/i.test(m)) return '소속 직원이나 출퇴근 기록이 있는 점포는 삭제할 수 없습니다. 대신 "사용"을 해제하세요.';
     if (/Failed to fetch|NetworkError/i.test(m)) return '서버에 연결할 수 없습니다. 네트워크 상태를 확인하세요.';
     if (error?.status === 429 || /rate limit/i.test(m)) return '접속이 원활하지 않습니다.\n1~2분 뒤 다시 시도해 주세요.';
     if (/should be different/i.test(m)) return '기존 비밀번호와 다른 비밀번호를 입력하세요.';
@@ -260,12 +260,12 @@
     me = data;
     adminLoaded = false; otLoaded = false; authStatus = new Map(); // 다른 계정으로 다시 로그인한 경우 대비
     setUserLabel();
-    // 관리 화면: 본사 관리자 또는 지점 관리자(담당 지점만)
+    // 관리 화면: 본사 관리자 또는 점포 관리자(담당 점포만)
     $('admin-tab').hidden = !(me.is_admin || isManager());
     document.querySelectorAll('.hq-only').forEach((el) => { el.hidden = !me.is_admin; }); // '관리자 메뉴' 탭은 매니저만
     $('manager-note').hidden = me.is_admin || !isManager();
     $('manager-note').textContent = isManager() && !me.is_admin
-      ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 지점만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
+      ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 점포만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)` : '';
     await Promise.all([loadSpecialHours(), loadSupports()]); // 특정일 근무시간·지원 근무 (정규 근무 계산·GPS에 필요)
     loadNotices(); // 공지사항 (새 공지 수 표시)
     switchTab('employee');
@@ -278,7 +278,7 @@
     loadMyOvertime();
   }
 
-  // 지점 관리자(본사 관리자가 아니고, 소속 지점이 있는 경우만 유효)
+  // 점포 관리자(본사 관리자가 아니고, 소속 점포가 있는 경우만 유효)
   const isManager = () => !!(me && !me.is_admin && me.is_branch_manager && me.branch_id);
 
   function setUserLabel() {
@@ -502,13 +502,13 @@
   });
   document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.view)));
 
-  // 작은 탭: 근태 관리(출퇴근 기록·초과근무 승인) / 관리자 메뉴(직원 목록~지점 관리)
+  // 작은 탭: 근태 관리(출퇴근 기록·초과근무 승인) / 관리자 메뉴(직원 목록~점포 관리)
   const STAFF_SUBS = ['staff', 'staff-add', 'support', 'job'];
   document.querySelectorAll('#admin-view [data-sub]').forEach((t) => t.addEventListener('click', () => {
     const sub = t.dataset.sub;
     t.parentElement.querySelectorAll('[data-sub]').forEach((x) => x.classList.toggle('active', x === t)); // 각 줄이 따로 기억
     document.querySelectorAll('#admin-view [data-group]').forEach((el) => { el.hidden = el.dataset.group !== sub; });
-    if (sub === 'records') initAdmin();
+    if (sub === 'today' || sub === 'personal' || sub === 'daily') initAdmin(); // 처음엔 전부 불러오고, 이후엔 조용히 갱신
     if (sub === 'overtime') {
       // 이미 한 번 불러왔으면 화면은 그대로 두고 조용히 갱신, 처음이면 바로 조회
       if (adminLoaded) { loadOvertimeAdmin(otLoaded); loadOtBadge(); }
@@ -589,12 +589,12 @@
   }
 
   // ---------------------------------------------------------------
-  //  GPS: 소속 지점 반경 안에서만 출퇴근 (서버에서도 다시 검사함)
+  //  GPS: 소속 점포 반경 안에서만 출퇴근 (서버에서도 다시 검사함)
   // ---------------------------------------------------------------
   let geo = { status: 'idle' }; // idle | locating | ok | denied | error | unsupported
   let geoWatch = null;
 
-  // 오늘 근무하는 지점(지원 근무면 지원 지점)에 위치가 등록되어 있으면 GPS 확인 대상
+  // 오늘 근무하는 점포(지원 근무면 지원 점포)에 위치가 등록되어 있으면 GPS 확인 대상
   const branchLoc = () => {
     const b = myBranchOn(ymd(new Date()));
     return b && b.lat != null && b.lng != null ? b : null;
@@ -613,7 +613,7 @@
   };
   function gpsAllowed() {
     const b = branchLoc();
-    if (!b) return true; // 위치 미설정 지점 → 확인 안 함
+    if (!b) return true; // 위치 미설정 점포 → 확인 안 함
     const d = currentDist();
     return d != null && d <= b.radius_m;
   }
@@ -656,7 +656,7 @@
         const d = currentDist();
         const accText = geo.acc > 50 ? ` (GPS 오차 약 ±${Math.round(geo.acc)}m)` : '';
         if (d <= b.radius_m) { text = `📍 ${b.name}에서 약 ${fmtDist(d)} · 출퇴근 가능${accText}`; kind = 'ok'; }
-        else { text = `📍 ${b.name}에서 약 ${fmtDist(d)} 떨어져 있습니다. 지점 반경 ${b.radius_m}m 안에서만 출퇴근할 수 있습니다.${accText}`; kind = 'err'; }
+        else { text = `📍 ${b.name}에서 약 ${fmtDist(d)} 떨어져 있습니다. 점포 반경 ${b.radius_m}m 안에서만 출퇴근할 수 있습니다.${accText}`; kind = 'err'; }
       }
       el.textContent = text;
       el.className = `gps-status ${kind}`;
@@ -705,7 +705,7 @@
     : /퇴근할 출근 기록이 없습니다/.test(error?.message || ''));
 
   async function doClock(fn, label) {
-    if (!gpsAllowed()) return setMsg('지점 반경 안에서만 출퇴근할 수 있습니다.', 'err');
+    if (!gpsAllowed()) return setMsg('점포 반경 안에서만 출퇴근할 수 있습니다.', 'err');
     if (!confirm(`${label} 하시겠습니까?`)) return;
     $('clock-in-btn').disabled = true; $('clock-out-btn').disabled = true;
     setMsg('');
@@ -817,7 +817,7 @@
     const sup = b?.support ? `오늘은 ${b.name} 지원 근무입니다${b.support.note ? ` (${b.support.note})` : ''}.` : '';
     const spc = hrs.special ? `오늘은 특정일 근무시간 ${ws} ~ ${we}입니다${hrs.note ? ` (${hrs.note})` : ''}.` : '';
     const note = [sup, spc].filter(Boolean).join('\n');
-    // 출퇴근 화면 맨 위: 이름 + 오늘 근무 지점 (지원 근무면 '지원' 표시)
+    // 출퇴근 화면 맨 위: 이름 + 오늘 근무 점포 (지원 근무면 '지원' 표시)
     $('me-name').textContent = me?.name ? `${me.name}님` : '';
     $('me-branch').textContent = b?.name ? (b.support ? `${b.name} (지원)` : b.name) : '';
     $('me-branch').hidden = !b?.name;
@@ -844,7 +844,7 @@
     const start = new Date(`${date}T${$('ot-start').value}:00+09:00`);
     let end = new Date(`${date}T${$('ot-end').value}:00+09:00`);
     if (end <= start) end = new Date(end.getTime() + 24 * 3600 * 1000); // 자정 넘김
-    const db = myBranchOn(date); // 그날 근무 지점 (지원 근무 반영)
+    const db = myBranchOn(date); // 그날 근무 점포 (지원 근무 반영)
     const hrs = hoursFor(db?.id ?? null, date, db);
     const we = hrs.end;
     const ws = hrs.start;
@@ -914,9 +914,9 @@
 
   const branchName = (id) => branches.find((b) => b.id === id)?.name || '미지정';
 
-  // 지점 select 옵션. includeAll: '전체'/'미지정' 포함(필터용), onlyActive: 사용 중 지점만(+ 현재값)
+  // 점포 select 옵션. includeAll: '전체'/'미지정' 포함(필터용), onlyActive: 사용 중 점포만(+ 현재값)
   function branchOptions({ includeAll = false, current = null, onlyActive = false } = {}) {
-    let html = includeAll ? '<option value="">전체 지점</option><option value="none">지점 미지정</option>' : '<option value="">(미지정)</option>';
+    let html = includeAll ? '<option value="">전체 점포</option><option value="none">점포 미지정</option>' : '<option value="">(미지정)</option>';
     branches.forEach((b) => {
       if (onlyActive && !b.is_active && b.id !== current) return;
       html += `<option value="${b.id}" ${b.id === current ? 'selected' : ''}>${esc(b.name)}${b.is_active ? '' : ' (미사용)'}</option>`;
@@ -934,7 +934,7 @@
       $(id).innerHTML = branchOptions({ includeAll: true });
       $(id).value = cur;
     });
-    // 지점 관리자는 담당 지점으로 고정
+    // 점포 관리자는 담당 점포로 고정
     if (isManager()) {
       ['p-branch', 'd-branch', 'o-branch'].forEach((id) => {
         $(id).value = String(me.branch_id);
@@ -943,7 +943,7 @@
     }
   }
 
-  // ---- 직원 분류(근무조/직무): 모든 지점 공통 목록 ----
+  // ---- 직원 분류(근무조/직무): 모든 점포 공통 목록 ----
   let jobGroups = [];
   async function loadJobGroups() {
     if (!FEATURE_JOB_GROUPS) { jobGroups = []; return; }
@@ -1021,7 +1021,7 @@
     $('sp-user').innerHTML = '<option value="">직원 선택</option>' + active.map((s) => `<option value="${s.id}">${esc(s.name)} (${esc(branchName(s.branch_id))})</option>`).join('');
     $('sp-user').value = curU;
     const curB = $('sp-branch').value;
-    $('sp-branch').innerHTML = '<option value="">지점 선택</option>' + branches.filter((b) => b.is_active).map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    $('sp-branch').innerHTML = '<option value="">점포 선택</option>' + branches.filter((b) => b.is_active).map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
     $('sp-branch').value = curB;
     if (!$('sp-start').value) { $('sp-start').value = today; $('sp-end').value = today; }
     const since = shiftDate(today, -7);
@@ -1042,10 +1042,10 @@
   $('sp-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const row = { user_id: $('sp-user').value, to_branch_id: Number($('sp-branch').value), start_date: $('sp-start').value, end_date: $('sp-end').value, note: $('sp-note').value.trim() || null };
-    if (!row.user_id || !row.to_branch_id) return spMsg('직원과 지원 지점을 선택하세요.', 'err');
+    if (!row.user_id || !row.to_branch_id) return spMsg('직원과 지원 점포를 선택하세요.', 'err');
     if (row.end_date < row.start_date) return spMsg('종료일이 시작일보다 빠릅니다.', 'err');
     const p = staff.find((s) => s.id === row.user_id);
-    if (p && p.branch_id === row.to_branch_id) return spMsg('원래 소속 지점과 같은 지점입니다. 다른 지점을 고르세요.', 'err');
+    if (p && p.branch_id === row.to_branch_id) return spMsg('원래 소속 점포와 같은 점포입니다. 다른 점포를 고르세요.', 'err');
     if (supports.some((s) => s.user_id === row.user_id && s.start_date <= row.end_date && s.end_date >= row.start_date)) return spMsg('이 직원은 같은 기간에 이미 지원 근무가 등록되어 있습니다.', 'err');
     const btn = e.submitter; btn.disabled = true;
     const { error } = await sb.from('support_assignments').insert(row);
@@ -1126,7 +1126,7 @@
   // ---- 필터 (p: 개인별 근무현황, d: 일자별 근무현황 — 각각 따로 동작) ----
   const loaders = { p: () => loadPersonal(), d: () => loadDaily(), o: () => loadOvertimeAdmin() };
 
-  // 지점 필터에 맞춰 직원 select 갱신
+  // 점포 필터에 맞춰 직원 select 갱신
   function fillUserSelect(prefix) {
     const fb = $(`${prefix}-branch`).value;
     const sel = $(`${prefix}-user`);
@@ -1210,9 +1210,9 @@
       adminReady = true;
     }
     if (!adminLoaded) {
-      // 처음 한 번: 지점·직원을 동시에 받아온 뒤 기록 조회 (느린 계정 상태는 기다리지 않음)
+      // 처음 한 번: 점포·직원을 동시에 받아온 뒤 기록 조회 (느린 계정 상태는 기다리지 않음)
       await Promise.all([loadBranches(), loadStaff()]);
-      fillUserSelects(); // 지점 이름이 들어간 선택 목록을 다시 채움
+      fillUserSelects(); // 점포 이름이 들어간 선택 목록을 다시 채움
       adminLoaded = true;
       reloadRecords();
       loadAuthStatus().then(() => {
@@ -1225,42 +1225,64 @@
     Promise.all([loadBranches(), loadStaff()]).then(() => reloadRecords(true));
   }
 
-  // 오늘 지점별 현황
+  // 오늘 점포별 현황
   async function loadTodaySummary() {
     const today = ymd(new Date());
+    // 실제 기록만 보여 줌 (출근·근무 중·퇴근). '누가 와야 하는지'는 근무 일정이 없어서 판단하지 않음
     const { data, error } = await fetchAll(() => sb.from('attendance')
-      .select('id, user_id, branch_id, clock_out').eq('work_date', today).order('id'));
+      .select('id, user_id, branch_id, clock_in, clock_out, profile:profiles!attendance_user_id_fkey(name)').eq('work_date', today).order('clock_in'));
     const tbody = $('today-summary');
-    if (error) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(errMsg(error))}</td></tr>`; return; }
-    const byUser = new Map(data.map((r) => [r.user_id, r]));
-    let groups = [...branches.map((b) => ({ id: b.id, name: b.name, active: b.is_active })), { id: null, name: '지점 미지정', active: true }];
-    if (isManager()) groups = groups.filter((g) => g.id === me.branch_id); // 지점 관리자는 담당 지점만
-    const total = { staff: 0, in: 0, working: 0, out: 0, absent: 0 };
-    // 오늘 근무할 지점: 지원 근무가 있으면 지원 지점, 없으면 소속 지점
-    const todayBranchOf = (s) => (supportOn(s.id, today)?.to_branch_id ?? s.branch_id ?? null);
+    loadMissingOut(); // 퇴근 미기록 알림 (따로 조회)
+    if (error) { tbody.innerHTML = `<tr><td colspan="4" class="empty">${esc(errMsg(error))}</td></tr>`; $('present-box').hidden = true; return; }
+    let groups = [...branches.map((b) => ({ id: b.id, name: b.name, active: b.is_active })), { id: null, name: '점포 미지정', active: false }];
+    if (isManager()) groups = groups.filter((g) => g.id === me.branch_id); // 슈퍼바이저는 담당 점포만
+    const total = { in: 0, working: 0, out: 0 };
+    const present = []; // [{ name, recs }]
     const rows = groups.map((g) => {
-      const members = staff.filter((s) => todayBranchOf(s) === g.id && isActive(s.id));
-      // 출근 인원은 "기록된 지점" 기준 (오늘 지점을 옮긴 경우 대비)
-      const recs = data.filter((r) => (r.branch_id ?? null) === g.id);
-      const absent = members.filter((s) => !byUser.has(s.id));
-      const c = {
-        staff: members.length, in: recs.length,
-        working: recs.filter((r) => !r.clock_out).length,
-        out: recs.filter((r) => r.clock_out).length,
-        absent: absent.length,
-      };
-      if (!c.staff && !c.in && (g.id === null || !g.active)) return '';
+      const recs = data.filter((r) => (r.branch_id ?? null) === g.id); // 기록된(근무한) 점포 기준
+      const c = { in: recs.length, working: recs.filter((r) => !r.clock_out).length, out: recs.filter((r) => r.clock_out).length };
+      if (!c.in && !g.active) return ''; // 안 쓰는 점포·점포 미지정은 기록이 있을 때만
       Object.keys(total).forEach((k) => { total[k] += c[k]; });
-      return `<tr>
-        <td>${esc(g.name)}</td><td class="num">${c.staff}</td><td class="num">${c.in}</td>
-        <td class="num">${c.working}</td><td class="num">${c.out}</td><td class="num">${c.absent}</td>
-        <td class="absent">${absent.map((s) => esc(s.name) + (supportOn(s.id, today) ? '(지원)' : '')).join(', ')}</td></tr>`;
+      if (recs.length) present.push({ name: g.name, recs });
+      return `<tr class="${c.in ? '' : 'zero'}"><td>${esc(g.name)}</td><td class="num">${c.in}</td><td class="num">${c.working}</td><td class="num">${c.out}</td></tr>`;
     }).join('');
     tbody.innerHTML = rows
-      ? rows + `<tr class="total"><td>합계</td><td class="num">${total.staff}</td><td class="num">${total.in}</td><td class="num">${total.working}</td><td class="num">${total.out}</td><td class="num">${total.absent}</td><td></td></tr>`
-      : '<tr><td colspan="7" class="empty">등록된 지점이나 직원이 없습니다.</td></tr>';
+      ? rows + `<tr class="total"><td>합계</td><td class="num">${total.in}</td><td class="num">${total.working}</td><td class="num">${total.out}</td></tr>`
+      : '<tr><td colspan="4" class="empty">등록된 점포가 없습니다.</td></tr>';
+    // 출근자 명단 접기란: 펼침 상태는 새로고침해도 유지 (details 요소는 그대로 두고 내용만 바꿈)
+    $('present-box').hidden = !total.in; // 출근 기록이 없으면 명단 접기란도 숨김
+    $('present-head').innerHTML = `출근자 명단 <b>${total.in}명</b> <span class="muted">· 근무 중 ${total.working} · 퇴근 ${total.out}</span>`;
+    $('present-list').innerHTML = present.map((g) => `<div class="fold-group">
+        <div class="fold-branch">${esc(g.name)} <span class="muted">${g.recs.length}명</span></div>
+        <div class="fold-names">${g.recs.map((r) => {
+          const sup = supportOn(r.user_id, today) ? '(지원)' : '';
+          return `<span class="name-chip${r.clock_out ? ' done' : ''}" title="${r.clock_out ? `출근 ${hm(r.clock_in)} · 퇴근 ${hm(r.clock_out)}` : `출근 ${hm(r.clock_in)} · 근무 중`}">${esc(r.profile?.name || '')}${sup} <span class="chip-time">${hm(r.clock_in)}${r.clock_out ? `~${hm(r.clock_out)}` : ''}</span></span>`;
+        }).join('')}</div>
+      </div>`).join('');
   }
   $('today-refresh').addEventListener('click', loadTodaySummary);
+
+  // 퇴근 미기록: 최근 7일(오늘 제외) 출근만 있고 퇴근이 없는 기록 → 근무시간이 0으로 계산되므로 알림
+  let missOutRows = [];
+  async function loadMissingOut() {
+    const today = ymd(new Date());
+    const from = ymd(new Date(Date.now() - 7 * 864e5));
+    const { data, error } = await sb.from('attendance')
+      .select('id, user_id, branch_id, work_date, clock_in, clock_out, note, profile:profiles!attendance_user_id_fkey(name)')
+      .is('clock_out', null).gte('work_date', from).lt('work_date', today).order('work_date', { ascending: false }).limit(500);
+    missOutRows = error ? [] : (isManager() ? data.filter((r) => r.branch_id === me.branch_id) : data);
+    $('missout-box').hidden = !missOutRows.length;
+    $('missout-head').innerHTML = `⚠ 퇴근 미기록 <b>${missOutRows.length}건</b> <span class="muted">· 최근 7일, 오늘 제외</span>`;
+    $('missout-list').innerHTML = missOutRows.map((r) => `<tr>
+        <td>${esc(dateLabel(r.work_date))}</td><td>${esc(branchName(r.branch_id))}</td><td>${esc(r.profile?.name || '')}</td><td>${hm(r.clock_in)}</td>
+        <td class="actions">${isManager() && r.user_id === me.id ? '<span class="muted small">매니저 처리</span>' : `<button type="button" class="btn small" data-missout="${r.id}">퇴근 입력</button>`}</td>
+      </tr>`).join('');
+    labelTable($('missout-list').closest('table'));
+  }
+  $('missout-list').addEventListener('click', (e) => {
+    const id = e.target.closest('[data-missout]')?.dataset.missout;
+    if (id) openEdit(missOutRows.find((r) => String(r.id) === id)); // 기존 기록 수정 창 재사용 (저장하면 현황이 다시 그려짐)
+  });
 
   // 필터 조건으로 출퇴근 기록 조회 (1,000건 넘어도 전부)
   function fetchRecords(prefix) {
@@ -1297,8 +1319,24 @@
   let personalRows = [];
   let personalOt = [];
   let personalSeq = 0;
+  // 긴 목록은 처음 20개만 보여 주고 [더 보기]/[전체 보기]로 늘림 (새로 조회하면 다시 20개)
+  const PAGE = 20;
+  const moreRow = (key, shown, total, cols, unit) => (shown >= total ? '' : `<tr class="more-row"><td colspan="${cols}">
+      <span class="muted small">전체 ${total.toLocaleString()}${unit} 중 ${shown.toLocaleString()}${unit} 표시</span>
+      <button type="button" class="btn small" data-more="${key}">${Math.min(PAGE, total - shown)}${unit} 더 보기</button>
+      <button type="button" class="btn small ghost" data-more-all="${key}">전체 보기</button></td></tr>`);
+  // 휴대폰용 요약 카드 칸 (PC에서는 숨김). 누르면 나머지 칸이 펼쳐짐. right: 오른쪽에 둘 상태·버튼
+  const mSum = (top, line, right = '') => `<td class="m-sum"><div class="ms-top">${top}<span class="ms-right">${right}<span class="ms-caret">▾</span></span></div><div class="ms-line">${line}</div></td>`;
+  // 요약 카드 누르면 펼치기/접기 (버튼을 누른 경우는 제외)
+  ['staff-summary', 'admin-records', 'ot-list'].forEach((id) => $(id).addEventListener('click', (e) => {
+    const td = e.target.closest('td.m-sum');
+    if (!td || e.target.closest('button')) return;
+    td.parentElement.classList.toggle('open');
+  }));
+  let pLimit = PAGE;
   async function loadPersonal(quiet = false) {
     if (!$('p-from').value || !$('p-to').value) return;
+    if (quiet !== true) pLimit = PAGE; // (change 이벤트로 불리면 quiet에 이벤트 객체가 들어옴 → 새 조회로 취급)
     const seq = ++personalSeq;
     if (!quiet) $('staff-summary').innerHTML = '<tr><td colspan="9" class="empty">불러오는 중...</td></tr>';
     const [att, ot] = await Promise.all([fetchRecords('p'), fetchApprovedOt('p')]);
@@ -1326,6 +1364,18 @@
     const data = att.data.filter((r) => nameHit('d', r.profile?.name) && jobHit('d', recJob(r)));
     dailyRows = data;
     dailyOt = ot.data;
+    if (quiet !== true) { dayOpen = new Set(data.length ? [data[0].work_date] : []); dayLimit.clear(); } // 새로 조회: 가장 최근 날짜만 펼침
+    renderDaily();
+  }
+
+  // 날짜별 접기 상태: 펼친 날짜, 날짜별로 보여 줄 인원 수
+  let dayOpen = new Set();
+  const dayLimit = new Map();
+  let dayGroups = [];
+  function renderDaily() {
+    const tbody = $('admin-records');
+    const data = dailyRows;
+    $('d-tools').hidden = !data.length;
     if (!data.length) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${nameQ('d') ? `"${esc(nameQ('d'))}" 이름의 기록이 없습니다.` : '기록이 없습니다.'}</td></tr>`; $('admin-summary').textContent = ''; return; }
     const workMs = (r) => regularMs(r) + approvedOtMsForRow(r, dailyOt);
 
@@ -1336,16 +1386,21 @@
       if (last && last.date === r.work_date) last.rows.push(r);
       else groups.push({ date: r.work_date, rows: [r] });
     });
+    dayGroups = groups;
     tbody.innerHTML = groups.map((g) => {
       const open = g.rows.filter((r) => !r.clock_out).length;
       const total = g.rows.reduce((s, r) => s + workMs(r), 0);
+      const isOpen = dayOpen.has(g.date);
       const head = `
-      <tr class="day-head"><td colspan="9">${dateLabel(g.date)}
+      <tr class="day-head${isOpen ? ' open' : ''}" data-day="${g.date}"><td colspan="9"><span class="day-caret">▸</span>${dateLabel(g.date)}
         <span class="day-meta">출근 ${g.rows.length}명${open ? ` · 미퇴근 ${open}건` : ''} · 근무시간 합계 ${fmtDur(total)}</span></td></tr>`;
-      return head + g.rows.map((r) => {
+      if (!isOpen) return head;
+      const lim = dayLimit.get(g.date) || PAGE;
+      return head + g.rows.slice(0, lim).map((r) => {
         const extra = unapprovedMsForRow(r, dailyOt);
+        const canEdit = !(isManager() && r.user_id === me.id);
         return `
-      <tr>
+      <tr class="rec">
         <td>${esc(r.branch?.name || '미지정')}</td>
         <td>${esc(r.profile?.name)}${r.home_branch_id && r.home_branch_id !== r.branch_id ? `<span class="tag-support">지원 · ${esc(branchName(r.home_branch_id))} 소속</span>` : ''}</td>
         <td>${hm(r.clock_in)}${r.in_dist_m != null ? `<span class="dist">${r.in_dist_m}m</span>` : ''}</td>
@@ -1355,13 +1410,32 @@
         <td class="note">${esc(r.note)}</td>
         <td class="edited">${r.updated_at ? `${esc(r.editor?.name || '알 수 없음')} · ${ymd(r.updated_at).slice(5)} ${hm(r.updated_at)}` : ''}</td>
         <td>${isManager() && r.user_id === me.id ? '<span class="muted small">매니저 처리</span>' : `<button class="btn small" data-edit="${r.id}">수정</button>`}</td>
+        ${mSum(`<b>${esc(r.profile?.name)}</b><span class="ms-sub">${esc(r.branch?.name || '미지정')}${r.home_branch_id && r.home_branch_id !== r.branch_id ? ' · 지원' : ''}</span>`,
+          `${hm(r.clock_in)} ~ ${r.clock_out ? hm(r.clock_out) : '<span class="tag-open">미퇴근</span>'}${r.clock_out ? ` · <b>${fmtDur(workMs(r))}</b>` : ''}${extra >= UNAPPROVED_SHOW_MS ? ` <span class="tag-warn">미승인 ${fmtDur(extra)}</span>` : ''}`,
+          canEdit ? `<button class="btn small" data-edit="${r.id}">수정</button>` : '')}
       </tr>`;
-      }).join('');
+      }).join('') + moreRow(`d:${g.date}`, Math.min(lim, g.rows.length), g.rows.length, 9, '명');
     }).join('');
     const total = data.reduce((s, r) => s + workMs(r), 0);
     const open = data.filter((r) => !r.clock_out).length;
     $('admin-summary').textContent = `${groups.length}일 · ${data.length.toLocaleString()}건 · 총 근무시간 ${fmtDur(total)}(정규+승인 초과)${open ? ` · 미퇴근 ${open}건` : ''}`;
   }
+  // 날짜 줄 누르면 펼침/접기, 날짜 안 [더 보기]
+  $('admin-records').addEventListener('click', (e) => {
+    const more = e.target.closest('[data-more], [data-more-all]');
+    if (more) {
+      const date = (more.dataset.more || more.dataset.moreAll).slice(2);
+      dayLimit.set(date, more.dataset.moreAll ? Infinity : (dayLimit.get(date) || PAGE) + PAGE);
+      return renderDaily();
+    }
+    const head = e.target.closest('tr.day-head');
+    if (!head) return;
+    const d = head.dataset.day;
+    if (dayOpen.has(d)) dayOpen.delete(d); else dayOpen.add(d);
+    renderDaily();
+  });
+  $('d-open-all').addEventListener('click', () => { dayOpen = new Set(dayGroups.map((g) => g.date)); renderDaily(); });
+  $('d-close-all').addEventListener('click', () => { dayOpen = new Set(); renderDaily(); });
 
   // 개인별 근무 현황 (현재 조회 조건 기준)
   let summaryRows = [];
@@ -1407,8 +1481,17 @@
     const sum = summaryRows.reduce((s, e) => ({
       days: s.days + e.days, reg: s.reg + e.reg, ot: s.ot + e.ot, total: s.total + e.total, open: s.open + e.open, edited: s.edited + e.edited,
     }), { days: 0, reg: 0, ot: 0, total: 0, open: 0, edited: 0 });
-    tbody.innerHTML = summaryRows.map((e) => `
-      <tr class="${e.days ? '' : 'zero'}">
+    // 합계는 맨 위에 고정 (일부만 보여도 전체 합계가 바로 보이도록)
+    tbody.innerHTML = `
+      <tr class="total top rec">
+        <td>합계</td><td>${summaryRows.length}명</td>
+        <td class="num">${sum.days}일</td><td class="num">${fmtDur(sum.reg)}</td><td class="num">${fmtDur(sum.ot)}</td>
+        <td class="num">${fmtDur(sum.total)}</td><td></td>
+        <td class="num">${sum.open ? `${sum.open}건` : '-'}</td><td class="num">${sum.edited ? `${sum.edited}건` : '-'}</td>
+        ${mSum(`<b>합계</b><span class="ms-sub">${summaryRows.length}명 · ${sum.days}일</span>`,
+          `총 <b>${fmtDur(sum.total)}</b> <span class="muted">(정규 ${fmtDur(sum.reg)} + 초과 ${fmtDur(sum.ot)})</span>${sum.open ? ` · <span class="tag-open">미퇴근 ${sum.open}건</span>` : ''}`)}
+      </tr>` + summaryRows.slice(0, pLimit).map((e) => `
+      <tr class="rec ${e.days ? '' : 'zero'}">
         <td>${esc(e.branchLabel)}</td>
         <td>${esc(e.name)}</td>
         <td class="num">${e.days}일</td>
@@ -1418,18 +1501,18 @@
         <td class="num">${fmtDur(e.avg)}</td>
         <td class="num">${e.open ? `<span class="tag-open">${e.open}건</span>` : '-'}</td>
         <td class="num">${e.edited ? `${e.edited}건` : '-'}</td>
-      </tr>`).join('') + `
-      <tr class="total">
-        <td>합계</td><td>${summaryRows.length}명</td>
-        <td class="num">${sum.days}일</td><td class="num">${fmtDur(sum.reg)}</td><td class="num">${fmtDur(sum.ot)}</td>
-        <td class="num">${fmtDur(sum.total)}</td><td></td>
-        <td class="num">${sum.open ? `${sum.open}건` : '-'}</td><td class="num">${sum.edited ? `${sum.edited}건` : '-'}</td>
-      </tr>`;
+        ${mSum(`<b>${esc(e.name)}</b><span class="ms-sub">${esc(e.branchLabel)}</span>`,
+          `${e.days}일 · 총 <b>${fmtDur(e.total)}</b>${e.open ? ` · <span class="tag-open">미퇴근 ${e.open}건</span>` : ''}`)}
+      </tr>`).join('') + moreRow('p', Math.min(pLimit, summaryRows.length), summaryRows.length, 9, '명');
   }
+  $('staff-summary').addEventListener('click', (e) => {
+    if (e.target.closest('[data-more]')) { pLimit += PAGE; renderStaffSummary(); }
+    else if (e.target.closest('[data-more-all]')) { pLimit = Infinity; renderStaffSummary(); }
+  });
 
   // ---- 근태표 엑셀: 시트1 달력형(직원별 출근/퇴근/연장), 시트2 일별 상세 ----
   //  개인별(p)·일자별(d) 근무현황의 [엑셀 다운로드]에서 공용으로 사용
-  //  화면에서 고른 기간·지점·직원 조건으로 그때 새로 불러와서 만듦 (선택 기간의 모든 날짜가 한 파일에)
+  //  화면에서 고른 기간·점포·직원 조건으로 그때 새로 불러와서 만듦 (선택 기간의 모든 날짜가 한 파일에)
   const hmDur = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 60)}시간 ${String(m % 60).padStart(2, '0')}분`; };
   const hours1 = (ms) => Math.round(ms / 360000) / 10; // 시간 단위, 소수 1자리
   const wdOf = (d) => weekdayFmt.format(new Date(`${d}T12:00:00+09:00`));
@@ -1458,7 +1541,7 @@
     const fb = $(`${prefix}-branch`).value;
     const fu = $(`${prefix}-user`).value;
 
-    // 대상 직원: 조건에 맞는 재직자 + 기간 중 기록이 있는 사람 (지점 → 이름 순)
+    // 대상 직원: 조건에 맞는 재직자 + 기간 중 기록이 있는 사람 (점포 → 이름 순)
     const people = new Map();
     staff.filter((s) => matchBranch(s.branch_id, fb) && (!fu || s.id === fu) && isActive(s.id) && jobHit(prefix, s.job_group_id)).forEach((s) => people.set(s.id, s));
     rows.forEach((r) => {
@@ -1471,13 +1554,13 @@
 
     // ===== 시트1: 달력형 =====
     const JG = FEATURE_JOB_GROUPS; // 분류 칸 포함 여부
-    const FIX = ['순번', '성명', '지점명', '입사일', ...(JG ? ['분류'] : []), '구분'];
+    const FIX = ['순번', '성명', '점포명', '입사일', ...(JG ? ['분류'] : []), '구분'];
     const blankFix = FIX.slice(0, -1).map(() => '');
     const SUM = ['근무일', '소정근로(시간)', '연장(시간)', '총(시간)'];
     const nF = FIX.length;
     const nD = dates.length;
     const nC = nF + nD + SUM.length;
-    const branchTitle = fb === '' ? '전체 지점' : fb === 'none' ? '지점 미지정' : branchName(Number(fb));
+    const branchTitle = fb === '' ? '전체 점포' : fb === 'none' ? '점포 미지정' : branchName(Number(fb));
     const aoa = [];
     aoa.push([`${from} ~ ${to} 근태 현황 (${branchTitle})`]);
     aoa.push([...FIX, ...dates.map((d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`), ...SUM]);
@@ -1542,7 +1625,7 @@
     ws['!rows'] = [{ hpt: 26 }];
 
     // ===== 시트2: 일별 상세 (직원 × 날짜, 기록 없는 날은 빈칸) =====
-    const detail = [['이름', '지점', ...(JG ? ['분류'] : []), '날짜', '요일', '정규 시작', '정규 종료', '출근', '퇴근', '휴게시간', '소정근로시간', '연장근로시간(승인)', '총 근무시간', '미승인 초과', '비고']];
+    const detail = [['이름', '점포', ...(JG ? ['분류'] : []), '날짜', '요일', '정규 시작', '정규 종료', '출근', '퇴근', '휴게시간', '소정근로시간', '연장근로시간(승인)', '총 근무시간', '미승인 초과', '비고']];
     list.forEach((p) => {
       dates.forEach((d) => {
         const r = rec.get(`${p.id}|${d}`);
@@ -1620,7 +1703,7 @@
     reloadRecords();
   });
 
-  // 일자별 근무현황 엑셀 (개인별과 같은 근태표 형식, 일자별 화면의 기간·지점·직원 조건)
+  // 일자별 근무현황 엑셀 (개인별과 같은 근태표 형식, 일자별 화면의 기간·점포·직원 조건)
   $('csv-btn').addEventListener('click', (e) => exportAttendance('d', e.currentTarget));
 
   // ---------------------------------------------------------------
@@ -1639,6 +1722,7 @@
   let otSeq = 0;
   async function loadOvertimeAdmin(quiet = false) {
     if (!$('o-from').value || !$('o-to').value) return;
+    if (quiet !== true) oLimit = PAGE;
     const seq = ++otSeq;
     const tbody = $('ot-list');
     if (!quiet) tbody.innerHTML = '<tr><td colspan="10" class="empty">불러오는 중...</td></tr>';
@@ -1672,21 +1756,30 @@
     otRows = ot.data.filter((q) => nameHit('o', q.profile?.name) && jobHit('o', staff.find((s) => s.id === q.user_id)?.job_group_id));
     otAtt = att.data;
     loadOtBadge();
+    renderOvertimeAdmin();
+  }
+
+  let oLimit = PAGE;
+  function renderOvertimeAdmin() {
+    const tbody = $('ot-list');
     if (!otRows.length) { tbody.innerHTML = `<tr><td colspan="10" class="empty">${nameQ('o') ? `"${esc(nameQ('o'))}" 이름의 신청 내역이 없습니다.` : '신청 내역이 없습니다.'}</td></tr>`; $('ot-summary').textContent = ''; return; }
 
     // 그 근무일의 실제 출퇴근 (해당 직원)
     const actualOf = (q) => otAtt.find((a) => a.user_id === q.user_id && a.work_date === q.work_date);
     let reqSum = 0;
     let recSum = 0;
-    tbody.innerHTML = otRows.map((q) => {
+    otRows.forEach((q) => { // 합계는 화면에 보이는 것과 상관없이 전체 기준
+      if (q.status === 'approved') { reqSum += new Date(q.end_at) - new Date(q.start_at); recSum += recognizedOtMs(q, otAtt); }
+    });
+    tbody.innerHTML = otRows.slice(0, oLimit).map((q) => {
       const a = actualOf(q);
       const req = new Date(q.end_at) - new Date(q.start_at);
       const rec = recognizedOtMs(q, otAtt);
-      if (q.status === 'approved') { reqSum += req; recSum += rec; }
       const actual = a ? `${hm(a.clock_in)}~${a.clock_out ? hm(a.clock_out) : '<span class="tag-open">미퇴근</span>'}` : '<span class="muted">기록 없음</span>';
       const reviewed = q.reviewed_at ? `<span class="edited">${esc(q.reviewer?.name || '')} · ${ymd(q.reviewed_at).slice(5)} ${hm(q.reviewed_at)}${q.review_note ? `<br>${esc(q.review_note)}` : ''}</span>` : '';
+      const mine = isManager() && q.user_id === me.id;
       return `
-      <tr data-id="${q.id}">
+      <tr class="rec" data-id="${q.id}">
         <td>${dateLabel(q.work_date)}</td>
         <td>${esc(q.branch?.name || '미지정')}</td>
         <td>${esc(q.profile?.name)}</td>
@@ -1699,8 +1792,13 @@
         <td class="actions">${q.status !== 'pending' ? reviewed
           : (isManager() && q.user_id === me.id) ? '<span class="muted small">매니저 처리</span>'
             : '<button class="btn small primary" data-ot-approve>승인</button><button class="btn small danger-outline" data-ot-reject>반려</button>'}</td>
+        ${mSum(`<b>${esc(q.profile?.name)}</b><span class="ms-sub">${esc(q.branch?.name || '미지정')}</span>`,
+          `${dateLabel(q.work_date)} ${otTimeLabel(q)} <span class="muted">(${fmtDur(req)} · ${q.is_after ? '사후' : '사전'})</span>`,
+          q.status === 'pending' && !mine
+            ? '<button class="btn small primary" data-ot-approve>승인</button><button class="btn small danger-outline" data-ot-reject>반려</button>'
+            : otStatusTag(q.status))}
       </tr>`;
-    }).join('');
+    }).join('') + moreRow('o', Math.min(oLimit, otRows.length), otRows.length, 10, '건');
     const pend = otRows.filter((q) => q.status === 'pending').length;
     $('ot-summary').textContent = `${otRows.length}건${pend ? ` · 대기 ${pend}건` : ''} · 승인 신청시간 ${fmtDur(reqSum)} · 인정 시간 ${fmtDur(recSum)}`;
   }
@@ -1725,15 +1823,20 @@
     tr.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     const { error } = await sb.rpc('review_overtime', { p_id: q.id, p_approve: approve, p_note: note.trim() || null });
     if (error) { alert(errMsg(error)); tr.querySelectorAll('button').forEach((b) => { b.disabled = false; }); return; }
-    loadOvertimeAdmin();
-    loadPersonal();
-    loadDaily();
+    // 조용히 갱신: 펼쳐 둔 목록(더 보기)·날짜 접기 상태를 유지
+    loadOvertimeAdmin(true);
+    loadPersonal(true);
+    loadDaily(true);
+  });
+  $('ot-list').addEventListener('click', (e) => {
+    if (e.target.closest('[data-more]')) { oLimit += PAGE; renderOvertimeAdmin(); }
+    else if (e.target.closest('[data-more-all]')) { oLimit = Infinity; renderOvertimeAdmin(); }
   });
 
   $('ot-csv-btn').addEventListener('click', () => {
     if (!otRows.length) return alert('다운로드할 내용이 없습니다. 먼저 조회하세요.');
     const mins = (ms) => Math.floor(ms / 60000);
-    const lines = [['근무일', '지점', '이름', '시작', '종료', '신청 시간(분)', '구분', '사유', '실제 출근', '실제 퇴근', '인정 시간(분)', '상태', '처리자', '처리일시', '메모']];
+    const lines = [['근무일', '점포', '이름', '시작', '종료', '신청 시간(분)', '구분', '사유', '실제 출근', '실제 퇴근', '인정 시간(분)', '상태', '처리자', '처리일시', '메모']];
     otRows.slice().reverse().forEach((q) => {
       const a = otAtt.find((x) => x.user_id === q.user_id && x.work_date === q.work_date);
       lines.push([
@@ -1749,7 +1852,7 @@
     downloadXlsx(`초과근무_${$('o-from').value}_${$('o-to').value}.xlsx`, lines, { sheetName: '초과근무' });
   });
 
-  // 권한: 일반 사용자(user) / 슈퍼바이저(supervisor, 소속 지점 관리) / 매니저(manager, 전체 관리)
+  // 권한: 일반 사용자(user) / 슈퍼바이저(supervisor, 소속 점포 관리) / 매니저(manager, 전체 관리)
   const ROLES = [['user', '일반 사용자'], ['supervisor', '슈퍼바이저'], ['manager', '매니저']];
   const roleOf = (s) => (s.is_admin ? 'manager' : s.is_branch_manager ? 'supervisor' : 'user');
   const roleOptions = (cur) => ROLES.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('');
@@ -1880,7 +1983,7 @@
     const name = $('na-name').value.trim();
     const flags = roleFlags($('na-role').value);
     if (flags.is_branch_manager && !$('na-branch').value) {
-      msg.textContent = '슈퍼바이저는 소속 지점이 있어야 합니다. 지점을 선택하세요.';
+      msg.textContent = '슈퍼바이저는 소속 점포가 있어야 합니다. 점포를 선택하세요.';
       msg.className = 'msg err'; msg.hidden = false; btn.disabled = false;
       return;
     }
@@ -1914,8 +2017,8 @@
   //  직원 일괄 등록 (엑셀/CSV 명단 → 검사 → 50명씩 나눠 등록 → 결과 파일)
   // ---------------------------------------------------------------
   const BULK_HEAD = FEATURE_JOB_GROUPS
-    ? ['이름', '아이디', '지점', '입사일', '분류', '권한', '초기 비밀번호']
-    : ['이름', '아이디', '지점', '입사일', '권한', '초기 비밀번호'];
+    ? ['이름', '아이디', '점포', '입사일', '분류', '권한', '초기 비밀번호']
+    : ['이름', '아이디', '점포', '입사일', '권한', '초기 비밀번호'];
   const BULK_TEXT_COLS = FEATURE_JOB_GROUPS ? [1, 3, 6] : [1, 3, 5]; // 아이디·입사일·비밀번호 칸은 텍스트 서식
   // 입사일: 2024-01-02 / 2024.1.2 / 2024/1/2 / 24-1-2 / 1/2/24(엑셀 날짜) → 'YYYY-MM-DD', 비어 있으면 '', 틀리면 null
   function parseHireDate(v) {
@@ -1971,13 +2074,13 @@
       ['칸', '필수', '설명', '예시'],
       ['이름', '필수', '30자 이내', '홍길동'],
       ['아이디', '필수', `영문 소문자·숫자·. _ - 로 2~30자. 로그인할 때 이 아이디만 입력합니다. (@${CFG.EMAIL_DOMAIN || ''})`, 'hong / 00123'],
-      ['지점', '선택', '아래 [사용 중인 지점] 이름을 그대로 적습니다. 비우면 지점 미지정', branches.find((b) => b.is_active)?.name || '본사'],
+      ['점포', '선택', '아래 [사용 중인 점포] 이름을 그대로 적습니다. 비우면 점포 미지정', branches.find((b) => b.is_active)?.name || '본사'],
       ['입사일', '선택', '2024-01-02 형식 (2024.1.2, 24-1-2도 가능). 근태표 엑셀에 표시됩니다', '2024-01-02'],
       ...(FEATURE_JOB_GROUPS ? [['분류', '선택', '아래 [분류 목록] 이름을 그대로 적습니다 (직원 관리 → 직원 분류에서 만든 이름). 비우면 미지정', jobGroups[0]?.name || '판매']] : []),
-      ['권한', '선택', '일반 사용자 / 슈퍼바이저 / 매니저 중 하나. 비우면 일반 사용자. 슈퍼바이저는 지점 필수', '일반 사용자'],
+      ['권한', '선택', '일반 사용자 / 슈퍼바이저 / 매니저 중 하나. 비우면 일반 사용자. 슈퍼바이저는 점포 필수', '일반 사용자'],
       ['초기 비밀번호', '선택', '8자 이상. 비우면 10자리 무작위로 자동 생성', ''],
       [],
-      ['사용 중인 지점'],
+      ['사용 중인 점포'],
       ...branches.filter((b) => b.is_active).map((b) => [b.name]),
       ...(FEATURE_JOB_GROUPS ? [[], ['분류 목록'], ...jobGroups.map((g) => [g.name])] : []),
     ];
@@ -2011,7 +2114,7 @@
     if (hi < 0) throw new Error('첫 줄에 "이름", "아이디" 칸 제목이 있는 양식을 사용하세요. ([양식 내려받기])');
     const head = table[hi].map(norm);
     const col = (...names) => head.findIndex((h) => names.includes(h));
-    const c = { name: col('이름'), id: col('아이디'), branch: col('지점', '소속 지점', '소속지점', '지점명'), hire: col('입사일'), job: FEATURE_JOB_GROUPS ? col('분류', '근무조', '직무') : -1, role: col('권한'), pw: col('초기 비밀번호', '초기비밀번호', '비밀번호') };
+    const c = { name: col('이름'), id: col('아이디'), branch: col('점포', '소속 점포', '소속점포', '점포명', '지점', '소속 지점', '소속지점', '지점명'), /* 예전 양식(지점)도 읽음 */ hire: col('입사일'), job: FEATURE_JOB_GROUPS ? col('분류', '근무조', '직무') : -1, role: col('권한'), pw: col('초기 비밀번호', '초기비밀번호', '비밀번호') };
     const rows = [];
     table.slice(hi + 1).forEach((r, k) => {
       const get = (i) => (i < 0 ? '' : norm(r[i]));
@@ -2039,8 +2142,8 @@
       r.branchId = null;
       if (r.branchName) {
         const b = branches.find((x) => x.name === r.branchName);
-        if (!b) e.push(`없는 지점 "${r.branchName}"`);
-        else if (!b.is_active) e.push(`사용 중지된 지점 "${r.branchName}"`);
+        if (!b) e.push(`없는 점포 "${r.branchName}"`);
+        else if (!b.is_active) e.push(`사용 중지된 점포 "${r.branchName}"`);
         else r.branchId = b.id;
       }
       r.jobId = null;
@@ -2052,7 +2155,7 @@
       if (r.hire === null) e.push(`입사일 "${r.hireText}" 형식 오류 (예: 2024-01-02)`);
       r.role = ROLE_WORDS[r.roleText.replace(/\s+/g, ' ')] || ROLE_WORDS[r.roleText.toLowerCase()];
       if (!r.role) e.push(`권한 "${r.roleText}"을(를) 알 수 없음`);
-      else if (r.role === 'supervisor' && !r.branchId) e.push('슈퍼바이저는 지점 필수');
+      else if (r.role === 'supervisor' && !r.branchId) e.push('슈퍼바이저는 점포 필수');
       r.pwAuto = !r.pw;
       if (r.pwAuto) r.pw = randomPw();
       else if (r.pw.length < 8) e.push('비밀번호 8자 이상');
@@ -2320,9 +2423,8 @@
   // [기록 보기] → 출퇴근 기록 탭의 개인별 근무현황에서 그 직원의 근무 기간을 조회
   function showRetiredRecords(s) {
     const info = retiredInfo.get(s.id);
-    document.querySelector('#admin-view [data-sub="records"]').classList.add('active');
-    document.querySelector('#admin-view [data-sub="overtime"]').classList.remove('active');
-    switchTab('admin'); // 근태 관리 → 출퇴근 기록
+    document.querySelectorAll('#admin-view .subtabs[data-for="admin"] [data-sub]').forEach((x) => x.classList.toggle('active', x.dataset.sub === 'personal'));
+    switchTab('admin'); // 근태 관리 → 개인별 근무현황
     $('p-branch').value = '';
     fillUserSelect('p');
     $('p-user').value = s.id;
@@ -2398,7 +2500,7 @@
     if (FEATURE_JOB_GROUPS) { const jv = tr.querySelector('[data-field="job_group_id"]').value; update.job_group_id = jv ? Number(jv) : null; }
     if (tr.dataset.id !== me.id) {
       Object.assign(update, roleFlags(tr.querySelector('[data-field="role"]').value));
-      if (update.is_branch_manager && !update.branch_id) return alert('슈퍼바이저는 소속 지점이 있어야 합니다. 소속 지점을 먼저 선택하세요.');
+      if (update.is_branch_manager && !update.branch_id) return alert('슈퍼바이저는 소속 점포가 있어야 합니다. 소속 점포를 먼저 선택하세요.');
     }
     e.target.disabled = true;
     const { error } = await sb.from('profiles').update(update).eq('id', tr.dataset.id);
@@ -2416,7 +2518,7 @@
     renderJobGroups(); // 분류별 인원 수 갱신
   });
 
-  // 지점 관리
+  // 점포 관리
   const hasLoc = (b) => b.lat != null && b.lng != null;
   const coordText = (b) => (hasLoc(b) ? `${b.lat}, ${b.lng}` : '');
 
@@ -2484,7 +2586,7 @@
     $('map-info').className = ok ? 'msg ok' : 'msg err';
     $('map-info').textContent = ok
       ? `${msg ? `${msg} · ` : ''}선택한 위치: ${pickPos.lat}, ${pickPos.lng} · 파란 원(반경 ${radius}m) 안에서 출퇴근할 수 있습니다`
-      : '한국 범위 밖입니다. 지점 위치를 다시 선택하세요.';
+      : '한국 범위 밖입니다. 점포 위치를 다시 선택하세요.';
   }
 
   async function centerOnAddress(addr) {
@@ -2494,7 +2596,7 @@
       const g = await geocode(addr);
       if (!g) {
         $('map-info').className = 'msg err';
-        $('map-info').textContent = '주소를 찾지 못했습니다. 지도를 움직여 지점 건물을 직접 클릭하세요.';
+        $('map-info').textContent = '주소를 찾지 못했습니다. 지도를 움직여 점포 건물을 직접 클릭하세요.';
         return;
       }
       pickMap.setView([g.lat, g.lng], g.precise ? 18 : 16);
@@ -2510,11 +2612,11 @@
     const L = window.L;
     pickRow = tr;
     pickPos = null;
-    $('map-title').textContent = `${tr.querySelector('[data-field="name"]').value || '지점'} 위치 선택`;
+    $('map-title').textContent = `${tr.querySelector('[data-field="name"]').value || '점포'} 위치 선택`;
     $('map-addr').value = tr.querySelector('[data-field="address"]').value.trim();
     $('map-ok').disabled = true;
     $('map-info').className = 'muted small';
-    $('map-info').textContent = '지도에서 지점 건물을 클릭하세요. 핀은 끌어서 옮길 수 있습니다.';
+    $('map-info').textContent = '지도에서 점포 건물을 클릭하세요. 핀은 끌어서 옮길 수 있습니다.';
     $('map-dialog').showModal();
     if (!pickMap) {
       pickMap = L.map('map-box');
@@ -2573,8 +2675,8 @@
     return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
   }
 
-  // ---- 특정일 근무시간 (매니저: 지점 표의 '정규 근무시간' 칸에서 등록·삭제) ----
-  // 지점 칸 아래 표시: 오늘 이후 등록된 날짜 (많으면 5개까지 + 외 N건)
+  // ---- 특정일 근무시간 (매니저: 점포 표의 '정규 근무시간' 칸에서 등록·삭제) ----
+  // 점포 칸 아래 표시: 오늘 이후 등록된 날짜 (많으면 5개까지 + 외 N건)
   function specialChips(branchId) {
     const today = ymd(new Date());
     const list = [...specialHours.values()].filter((h) => h.branch_id === branchId && h.work_date >= today)
@@ -2651,7 +2753,7 @@
           <button class="btn small" data-bpick>지도에서 선택</button>
           <button class="btn small" data-bdel>삭제</button>
         </td>
-      </tr>`).join('') || '<tr><td colspan="7" class="empty">등록된 지점이 없습니다. 위에서 지점을 추가하세요.</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="7" class="empty">등록된 점포가 없습니다. 위에서 점포를 추가하세요.</td></tr>';
   }
 
   $('branch-form').addEventListener('submit', async (e) => {
@@ -2677,7 +2779,7 @@
     if (e.target.matches('[data-sh-del]')) return deleteSpecial(Number(e.target.dataset.shDel));
     if (e.target.matches('[data-bsave]')) {
       const name = tr.querySelector('[data-field="name"]').value.trim();
-      if (!name) return alert('지점 이름을 입력하세요.');
+      if (!name) return alert('점포 이름을 입력하세요.');
       let loc;
       try { loc = parseCoords(tr.querySelector('[data-field="coords"]').value); } catch (err) { return alert(err.message); }
       const radius = Number(tr.querySelector('[data-field="radius_m"]').value);
@@ -2719,7 +2821,7 @@
         const g = await geocode(addr);
         if (!g) {
           note.className = 'loc-note off';
-          note.textContent = '⚠️ 주소를 찾지 못했습니다. [지도에서 선택]으로 지점 건물을 직접 찍어 주세요.';
+          note.textContent = '⚠️ 주소를 찾지 못했습니다. [지도에서 선택]으로 점포 건물을 직접 찍어 주세요.';
           return;
         }
         tr.querySelector('[data-field="coords"]').value = `${g.lat}, ${g.lng}`;
@@ -2741,7 +2843,7 @@
     } else if (e.target.matches('[data-bpick]')) {
       openMapPicker(tr);
     } else if (e.target.matches('[data-bdel]')) {
-      if (!confirm(`'${branchName(id)}' 지점을 삭제하시겠습니까?`)) return;
+      if (!confirm(`'${branchName(id)}' 점포를 삭제하시겠습니까?`)) return;
       const { error } = await sb.from('branches').delete().eq('id', id);
       if (error) return alert(errMsg(error));
       await loadBranches();
