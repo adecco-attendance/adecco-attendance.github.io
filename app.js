@@ -992,12 +992,14 @@
 
   function renderJobGroups() {
     if (!FEATURE_JOB_GROUPS) return;
+    // 분류 목록은 모든 점포 공통 → 만들기·이름 바꾸기·삭제는 총괄 매니저만 (권역 매니저는 보기만, 직원에게 지정은 가능)
+    $('job-form').hidden = !isHQ();
     $('job-list').innerHTML = jobGroups.map((g) => {
-      const n = staff.filter((s) => s.job_group_id === g.id && !s.deleted_at).length;
-      return `<span class="job-chip" data-id="${g.id}">${esc(g.name)} <span class="muted small">${n}명</span>
+      const n = staff.filter((s) => s.job_group_id === g.id && !s.deleted_at && isWorker(s)).length;
+      return `<span class="job-chip" data-id="${g.id}">${esc(g.name)} <span class="muted small">${n}명</span>${isHQ() ? `
         <button type="button" class="sh-x" data-job-rename title="이름 바꾸기" aria-label="이름 바꾸기">✎</button>
-        <button type="button" class="sh-x" data-job-del title="삭제" aria-label="삭제">✕</button></span>`;
-    }).join('') || '<span class="muted small">아직 분류가 없습니다. 오른쪽에 이름을 입력해 추가하세요.</span>';
+        <button type="button" class="sh-x" data-job-del title="삭제" aria-label="삭제">✕</button>` : ''}</span>`;
+    }).join('') || `<span class="muted small">${isHQ() ? '아직 분류가 없습니다. 오른쪽에 이름을 입력해 추가하세요.' : '아직 분류가 없습니다. 분류는 총괄 매니저가 만듭니다.'}</span>`;
   }
   $('job-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1979,7 +1981,7 @@
         <td>${self || locked ? '' : `<input type="checkbox" class="s-check" ${staffChecked.has(s.id) ? 'checked' : ''}>`}</td>
         <td><input type="text" value="${esc(s.name)}" maxlength="30" data-field="name" ${dis}></td>
         <td><select data-field="branch_id" ${dis}>${branchOptions({ current: s.branch_id, onlyActive: true })}</select>${supportTags(s.id)}</td>
-        ${FEATURE_JOB_GROUPS ? `<td><select data-field="job_group_id">${jobOptions(s.job_group_id ?? null)}</select></td>` : ''}
+        ${FEATURE_JOB_GROUPS ? (isWorker(s) ? `<td><select data-field="job_group_id" ${dis}>${jobOptions(s.job_group_id ?? null)}</select></td>` : '<td><span class="muted small">-</span></td>') : ''}
         <td><input type="date" value="${esc(s.hire_date || '')}" data-field="hire_date" class="hire-input" ${dis}></td>
         <td>${esc(loginIdOf(s.email))}</td>
         <td>${statusKnown ? (active ? '<span class="status-on">사용 중</span>' : '<span class="status-off">비활성</span>') : '-'}</td>
@@ -2616,7 +2618,8 @@
     if (!name) return alert('이름을 입력하세요.');
     const bv = tr.querySelector('[data-field="branch_id"]').value;
     const update = { name, branch_id: bv ? Number(bv) : null, hire_date: tr.querySelector('[data-field="hire_date"]').value || null };
-    if (FEATURE_JOB_GROUPS) { const jv = tr.querySelector('[data-field="job_group_id"]').value; update.job_group_id = jv ? Number(jv) : null; }
+    const jf = tr.querySelector('[data-field="job_group_id"]'); // 매니저 계정은 분류 칸 없음
+    if (FEATURE_JOB_GROUPS && jf) update.job_group_id = jf.value ? Number(jf.value) : null;
     if (tr.dataset.id !== me.id) {
       Object.assign(update, roleFlags(tr.querySelector('[data-field="role"]').value));
       if (update.is_branch_manager && !update.branch_id) return alert('슈퍼바이저는 소속 점포가 있어야 합니다. 소속 점포를 먼저 선택하세요.');
@@ -2644,10 +2647,53 @@
   const hasLoc = (b) => b.lat != null && b.lng != null;
   const coordText = (b) => (hasLoc(b) ? `${b.lat}, ${b.lng}` : '');
 
-  // ---- 주소 → 좌표 (OpenStreetMap Nominatim, 키 불필요) ----
+  // ---- 주소 → 좌표: 카카오(키가 있으면, 한국 주소에 정확) → 실패하면 OpenStreetMap Nominatim(키 불필요) ----
   //  precise: 건물·번지까지 찾았는지. 도로·동네 위치로만 잡히면 false → 지도에서 직접 찍도록 안내
+  //  ※ 카카오 약관상 검색 결과를 그대로 쌓아 두지 않도록, 좌표는 매니저가 지도에서 확인·선택한 값만 저장(저장 버튼)
+  const KAKAO_KEY = CFG.KAKAO_JS_KEY || '';
+  const r6 = (v) => Math.round(Number(v) * 1e6) / 1e6;
+  let kakaoLoading = null;
+  function loadKakao() {
+    if (!KAKAO_KEY) return Promise.reject(new Error('카카오 키 없음'));
+    if (window.kakao?.maps?.services) return Promise.resolve();
+    if (kakaoLoading) return kakaoLoading;
+    kakaoLoading = new Promise((resolve, reject) => {
+      const fail = (msg) => { kakaoLoading = null; reject(new Error(msg)); };
+      const s = document.createElement('script');
+      s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(KAKAO_KEY)}&libraries=services&autoload=false`;
+      s.onload = () => { try { window.kakao.maps.load(() => resolve()); } catch (e) { fail('카카오 지도를 시작하지 못했습니다.'); } };
+      s.onerror = () => fail('카카오 지도를 불러오지 못했습니다 (키·도메인 설정 또는 인터넷 연결 확인).');
+      document.head.appendChild(s);
+      setTimeout(() => { if (!window.kakao?.maps?.services) fail('카카오 지도 응답이 없습니다.'); }, 10000);
+    });
+    return kakaoLoading;
+  }
+  function kakaoGeocode(addr) {
+    return new Promise((resolve) => {
+      const S = window.kakao.maps.services;
+      new S.Geocoder().addressSearch(addr, (res, status) => {
+        if (status === S.Status.OK && res.length) {
+          const r = res[0];
+          const bld = r.road_address?.building_name;
+          return resolve({
+            lat: r6(r.y), lng: r6(r.x),
+            label: bld ? `${r.address_name} (${bld})` : r.address_name,
+            precise: r.address_type === 'ROAD_ADDR' || r.address_type === 'REGION_ADDR', // 번지·건물번호까지 찾음
+          });
+        }
+        // 주소로 못 찾으면 건물·상호 이름으로 검색 (예: '○○빌딩', '△△마트 강남점')
+        new S.Places().keywordSearch(addr, (pl, st) => {
+          if (st === S.Status.OK && pl.length) {
+            const p = pl[0];
+            return resolve({ lat: r6(p.y), lng: r6(p.x), label: `${p.place_name} (${p.road_address_name || p.address_name})`, precise: true });
+          }
+          resolve(null);
+        });
+      });
+    });
+  }
   const PRECISE_CLASSES = ['building', 'amenity', 'office', 'shop', 'tourism', 'leisure', 'craft', 'healthcare', 'man_made'];
-  async function geocode(addr) {
+  async function osmGeocode(addr) {
     const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=kr&limit=1&accept-language=ko&q=${encodeURIComponent(addr)}`;
     const res = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error(`검색 실패 (${res.status})`);
@@ -2656,15 +2702,15 @@
     const r = list[0];
     const precise = !!r.address?.house_number || PRECISE_CLASSES.includes(r.category || r.class) ||
       ((r.category || r.class) === 'place' && ['house', 'building'].includes(r.type));
-    return {
-      lat: Math.round(Number(r.lat) * 1e6) / 1e6,
-      lng: Math.round(Number(r.lon) * 1e6) / 1e6,
-      label: String(r.display_name || '').split(',').slice(0, 3).join(',').trim(),
-      precise,
-    };
+    return { lat: r6(r.lat), lng: r6(r.lon), label: String(r.display_name || '').split(',').slice(0, 3).join(',').trim(), precise };
+  }
+  async function geocode(addr) {
+    let kakaoOk = false;
+    try { await loadKakao(); kakaoOk = true; } catch (_) { /* 카카오를 못 쓰면 OpenStreetMap으로 */ }
+    return kakaoOk ? kakaoGeocode(addr) : osmGeocode(addr);
   }
 
-  // ---- 지도에서 위치 선택 (Leaflet + OpenStreetMap 지도, 필요할 때만 불러옴) ----
+  // ---- 지도에서 위치 선택: 카카오맵(키가 있으면) → 실패하면 Leaflet + OpenStreetMap ----
   let leafletLoading = null;
   function loadLeaflet() {
     if (window.L) return Promise.resolve();
@@ -2684,25 +2730,53 @@
   }
 
   const inKorea = (lat, lng) => lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132;
-  let pickMap = null;
+  let pickMap = null;     // 지도 객체 (카카오 또는 Leaflet)
+  let mapEngine = null;   // 'kakao' | 'leaflet' (처음 지도를 열 때 정함)
   let pickMarker = null;
   let pickCircle = null;
   let pickRow = null;
   let pickPos = null;
 
+  // 두 지도 엔진을 같은 방식으로 다루기 위한 작은 도우미 (z: Leaflet 확대 단계 기준, 18 = 건물)
+  const mp = {
+    view(lat, lng, z) {
+      if (mapEngine === 'kakao') {
+        const K = window.kakao.maps;
+        pickMap.setLevel(Math.min(14, Math.max(1, 20 - z)));
+        pickMap.setCenter(new K.LatLng(lat, lng));
+      } else pickMap.setView([lat, lng], z);
+    },
+    place(lat, lng, radius) {
+      if (mapEngine === 'kakao') {
+        const K = window.kakao.maps;
+        const pos = new K.LatLng(lat, lng);
+        if (!pickMarker) {
+          pickMarker = new K.Marker({ position: pos, draggable: true, map: pickMap });
+          K.event.addListener(pickMarker, 'dragend', () => { const p = pickMarker.getPosition(); setPick(p.getLat(), p.getLng()); });
+          pickCircle = new K.Circle({ center: pos, radius, strokeWeight: 1, strokeColor: '#2f6fed', strokeOpacity: 0.9, fillColor: '#2f6fed', fillOpacity: 0.12, map: pickMap });
+        } else { pickMarker.setPosition(pos); pickCircle.setPosition(pos); pickCircle.setRadius(radius); }
+      } else {
+        const L = window.L;
+        if (!pickMarker) {
+          pickMarker = L.marker([lat, lng], { draggable: true }).addTo(pickMap);
+          pickMarker.on('dragend', () => { const p = pickMarker.getLatLng(); setPick(p.lat, p.lng); });
+          pickCircle = L.circle([lat, lng], { radius, color: '#2f6fed', weight: 1, fillOpacity: 0.12 }).addTo(pickMap);
+        } else { pickMarker.setLatLng([lat, lng]); pickCircle.setLatLng([lat, lng]); pickCircle.setRadius(radius); }
+      }
+    },
+    clear() {
+      if (!pickMarker) return;
+      if (mapEngine === 'kakao') { pickMarker.setMap(null); pickCircle.setMap(null); }
+      else { pickMap.removeLayer(pickMarker); pickMap.removeLayer(pickCircle); }
+      pickMarker = null; pickCircle = null;
+    },
+    resize() { if (mapEngine === 'kakao') pickMap.relayout(); else pickMap.invalidateSize(); },
+  };
+
   function setPick(lat, lng, msg) {
-    const L = window.L;
-    pickPos = { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
+    pickPos = { lat: r6(lat), lng: r6(lng) };
     const radius = Number(pickRow?.querySelector('[data-field="radius_m"]')?.value) || 100;
-    if (!pickMarker) {
-      pickMarker = L.marker([lat, lng], { draggable: true }).addTo(pickMap);
-      pickMarker.on('dragend', () => { const p = pickMarker.getLatLng(); setPick(p.lat, p.lng); });
-      pickCircle = L.circle([lat, lng], { radius, color: '#2f6fed', weight: 1, fillOpacity: 0.12 }).addTo(pickMap);
-    } else {
-      pickMarker.setLatLng([lat, lng]);
-      pickCircle.setLatLng([lat, lng]);
-      pickCircle.setRadius(radius);
-    }
+    mp.place(lat, lng, radius);
     const ok = inKorea(pickPos.lat, pickPos.lng);
     $('map-ok').disabled = !ok;
     $('map-info').className = ok ? 'msg ok' : 'msg err';
@@ -2721,7 +2795,7 @@
         $('map-info').textContent = '주소를 찾지 못했습니다. 지도를 움직여 점포 건물을 직접 클릭하세요.';
         return;
       }
-      pickMap.setView([g.lat, g.lng], g.precise ? 18 : 16);
+      mp.view(g.lat, g.lng, g.precise ? 18 : 16);
       setPick(g.lat, g.lng, g.precise ? `찾음: ${g.label}` : `⚠️ 건물이 아닌 "${g.label}" 근처입니다. 실제 건물을 클릭해 핀을 옮겨 주세요`);
     } catch (err) {
       $('map-info').className = 'msg err';
@@ -2729,38 +2803,55 @@
     }
   }
 
-  async function openMapPicker(tr, firstMsg) {
-    try { await loadLeaflet(); } catch (err) { return alert(err.message); }
+  // 처음 열 때 지도 엔진을 정하고 지도를 만듦 (카카오 실패 → Leaflet)
+  async function ensurePickMap() {
+    if (pickMap) return;
+    try {
+      await loadKakao();
+      const K = window.kakao.maps;
+      mapEngine = 'kakao';
+      pickMap = new K.Map($('map-box'), { center: new K.LatLng(36.4, 127.8), level: 13 });
+      pickMap.addControl(new K.ZoomControl(), K.ControlPosition.RIGHT);
+      K.event.addListener(pickMap, 'click', (ev) => setPick(ev.latLng.getLat(), ev.latLng.getLng()));
+      return;
+    } catch (_) { mapEngine = null; pickMap = null; }
+    await loadLeaflet();
     const L = window.L;
+    mapEngine = 'leaflet';
+    pickMap = L.map('map-box');
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(pickMap);
+    pickMap.on('click', (ev) => setPick(ev.latlng.lat, ev.latlng.lng));
+    pickMap.setView([36.4, 127.8], 7);
+  }
+
+  async function openMapPicker(tr, firstMsg) {
     pickRow = tr;
     pickPos = null;
     $('map-title').textContent = `${tr.querySelector('[data-field="name"]').value || '점포'} 위치 선택`;
     $('map-addr').value = tr.querySelector('[data-field="address"]').value.trim();
     $('map-ok').disabled = true;
     $('map-info').className = 'muted small';
-    $('map-info').textContent = '지도에서 점포 건물을 클릭하세요. 핀은 끌어서 옮길 수 있습니다.';
+    $('map-info').textContent = '지도를 불러오는 중...';
     $('map-dialog').showModal();
-    if (!pickMap) {
-      pickMap = L.map('map-box');
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
-      }).addTo(pickMap);
-      pickMap.on('click', (ev) => setPick(ev.latlng.lat, ev.latlng.lng));
-    }
-    if (pickMarker) { pickMap.removeLayer(pickMarker); pickMap.removeLayer(pickCircle); pickMarker = null; pickCircle = null; }
-    setTimeout(() => pickMap.invalidateSize(), 50);
+    try { await ensurePickMap(); } catch (err) { $('map-dialog').close(); return alert(err.message); }
+    $('map-info').textContent = '지도에서 점포 건물을 클릭하세요. 핀은 끌어서 옮길 수 있습니다.';
+    mp.clear();
+    mp.resize();
 
     let cur = null;
     try { cur = parseCoords(tr.querySelector('[data-field="coords"]').value); } catch (_) { cur = null; }
-    if (cur) {
-      pickMap.setView([cur.lat, cur.lng], firstMsg ? 17 : 18);
-      setPick(cur.lat, cur.lng, firstMsg || '현재 입력된 위치');
-    } else if ($('map-addr').value) {
-      pickMap.setView([36.4, 127.8], 7);
-      centerOnAddress($('map-addr').value);
-    } else {
-      pickMap.setView([36.4, 127.8], 7); // 대한민국 전체
-    }
+    setTimeout(() => { // 대화상자가 그려진 뒤 크기를 다시 계산하고 위치 지정
+      mp.resize();
+      if (cur) {
+        mp.view(cur.lat, cur.lng, firstMsg ? 17 : 18);
+        setPick(cur.lat, cur.lng, firstMsg || '현재 입력된 위치');
+      } else if ($('map-addr').value) {
+        mp.view(36.4, 127.8, 7);
+        centerOnAddress($('map-addr').value);
+      } else {
+        mp.view(36.4, 127.8, 7); // 대한민국 전체
+      }
+    }, 60);
   }
 
   $('map-search').addEventListener('click', () => {
@@ -2933,7 +3024,7 @@
         if (!isMgr()) { startGps(); setupOvertimeForm(); }
       }
     } else if (e.target.matches('[data-bgeo]')) {
-      // 주소 → 좌표 (OpenStreetMap 무료 검색, 키 불필요). 저장은 [저장]을 눌러야 반영
+      // 주소 → 좌표 (카카오 주소 검색, 안 되면 OpenStreetMap). 저장은 [저장]을 눌러야 반영
       const addr = tr.querySelector('[data-field="address"]').value.trim();
       const note = tr.querySelector('[data-field="note"]');
       if (!addr) return alert('주소를 입력하세요.');

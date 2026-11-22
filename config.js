@@ -13,4 +13,8 @@ window.CONFIG = {
   EMAIL_DOMAIN: 'adeccobs2.co.kr',
 
   COMPANY_NAME: '아데코코리아',
+
+  // 카카오맵 JavaScript 키 (카카오 디벨로퍼스 앱 '아데코 근태', ID 1661120). 공개용 키이며 등록한 도메인에서만 동작합니다.
+  // 비워 두면 점포 위치 찾기·지도가 OpenStreetMap으로 동작합니다.
+  KAKAO_JS_KEY: 'aac7d2a81cb74399c190ad2edeaa33ab',
 };
