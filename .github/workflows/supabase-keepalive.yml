@@ -20,8 +20,8 @@ jobs:
       - name: Supabase 접속 확인
         env:
           SUPABASE_URL: https://tjdeajvepgpsceqzentc.supabase.co
-          # 사이트(config.js)에 이미 공개된 anon 키 (비밀 키 아님)
-          SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqZGVhanZlcGdwc2NlcXplbnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0NjE1NjksImV4cCI6MjExMDAzNzU2OX0.9nBBvJA-se9T2Ar6Ii92RnNQ-F_aA-iIfdeDFqcR8yg
+          # anon 키는 저장소 설정 > Secrets and variables > Actions 의 SUPABASE_ANON_KEY 에 보관 (파일에 키를 직접 쓰지 않음)
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           code=$(curl -s -o response.txt -w "%{http_code}" -X POST \
             "$SUPABASE_URL/rest/v1/rpc/keepalive" \
