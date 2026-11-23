@@ -1,0 +1,125 @@
+// 화면 디자인 (2026-11-23 적용, 시안 D): 위쪽 탭·작은 탭을 모두 왼쪽 사이드바로, 위쪽에는 지금 페이지 위치만 표시
+// 기존 탭 버튼은 숨겨 두고 그대로 눌러서 화면을 바꿈 (app.js의 화면 전환 로직은 그대로 사용)
+(function () {
+  // 채운(솔리드) 아이콘
+  const ICON = {
+    employee: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 10.4 3.2 1.9a1 1 0 1 1-1 1.7l-3.7-2.2A1 1 0 0 1 11 13V7a1 1 0 1 1 2 0z"/></svg>',
+    admin: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1zM4 10v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9zm3 3h4v4H7z"/></svg>',
+    hq: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="7.5" r="3.5"/><path d="M2 19.5C2 15.9 5.1 13 9 13s7 2.9 7 6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M17.5 8a1 1 0 0 1 1 1v1.5H20a1 1 0 1 1 0 2h-1.5V14a1 1 0 1 1-2 0v-1.5H15a1 1 0 1 1 0-2h1.5V9a1 1 0 0 1 1-1z"/></svg>',
+    notice: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 3.5a1 1 0 0 1 1.6.8v15.4a1 1 0 0 1-1.6.8L13.6 17H11l.9 3.3a1 1 0 0 1-1 1.3H9.3a1 1 0 0 1-1-.8L7.2 17H6a4 4 0 0 1 0-8h7.6z"/><path d="M21 10.5a1.5 1.5 0 0 1 0 3z"/></svg>',
+  };
+  const SHORT = { employee: '출퇴근', admin: '근태', hq: '관리', notice: '공지' };  const ORDER = ['employee', 'admin', 'hq', 'notice']; // 공지사항은 맨 아래
+  const CHEV = '<svg class="dchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  // 접은 그룹 (이 기기에 기억)
+  let collapsed = new Set();
+  try { collapsed = new Set(JSON.parse(localStorage.getItem('dnavCollapsed') || '[]')); } catch (_) {}
+  const topTab = (v) => document.querySelector(`.topbar .tab[data-view="${v}"]`);
+  const subRow = (v) => document.querySelector(`#admin-view .subtabs[data-for="${v}"]`);
+  const cleanText = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim() || el.textContent.trim();
+  const badgeOf = (el) => { const b = el.querySelector('.ot-badge:not([hidden])'); return b && b.textContent.trim() ? b.textContent.trim() : ''; };
+
+  function current() {
+    const t = document.querySelector('.topbar .tab.active');
+    const v = t?.dataset.view || 'employee';
+    const row = subRow(v);
+    const s = row?.querySelector('[data-sub].active');
+    return { v, title: t ? cleanText(t) : '', sub: s ? s.dataset.sub : null, subTitle: s ? cleanText(s) : '' };
+  }
+
+  function build() {
+    const nav = document.getElementById('dnav');
+    if (!nav) return;
+    const cur = current();
+    let html = '<div class="dhead"><span class="dlogo"><img src="icons/icon-192.png" alt="Adecco"></span><b>아데코코리아</b><button class="dclose" aria-label="닫기">✕</button></div><div class="dmenu">';
+    ORDER.forEach((v) => {
+      const t = topTab(v);
+      if (!t || t.hidden) return;
+      const row = subRow(v);
+      const subs = row ? [...row.querySelectorAll('[data-sub]')].filter((b) => !b.hidden && getComputedStyle(b).display !== 'none') : [];
+      const groupOn = cur.v === v;
+      const folded = subs.length && collapsed.has(v);
+      // 접힌 그룹은 세부 메뉴의 배지를 합쳐서 그룹 줄에 표시
+      const sum = folded ? subs.map(badgeOf).reduce((a, x) => a + (Number(x) || 0), 0) : 0;
+      const tb = badgeOf(t) || (sum ? String(sum) : '');
+      html += `<div class="dgroup ${groupOn ? 'on' : ''} ${subs.length ? 'has-subs' : ''} ${folded ? 'folded' : ''}">`;
+      html += `<button class="dtop" data-v="${v}" ${subs.length ? 'data-fold="1"' : ''}>${ICON[v] || ''}<span>${cleanText(t)}</span>${tb ? `<i class="dbadge">${tb}</i>` : ''}${subs.length ? CHEV : ''}</button>`;
+      if (subs.length && !folded) {
+        html += '<div class="dsubs">' + subs.map((b) => {
+          const bd = badgeOf(b);
+          return `<button class="dsub ${groupOn && cur.sub === b.dataset.sub ? 'on' : ''}" data-v="${v}" data-s="${b.dataset.sub}"><span>${cleanText(b)}</span>${bd ? `<i class="dbadge">${bd}</i>` : ''}</button>`;
+        }).join('') + '</div>';
+      }
+      html += '</div>';
+    });
+    nav.innerHTML = html + '</div>';
+    // 휴대폰 아래 탭바 (큰 메뉴만)
+    const bb = document.getElementById('dbottom');
+    if (bb) bb.innerHTML = ORDER.map((v) => { const t = topTab(v); if (!t || t.hidden) return ''; const b = badgeOf(t) || [...(subRow(v)?.querySelectorAll('[data-sub]') || [])].map(badgeOf).find(Boolean) || ''; return `<button data-v="${v}" class="${cur.v === v ? 'on' : ''}">${ICON[v]}<span>${SHORT[v]}</span>${b ? `<i class="dbadge">${b}</i>` : ''}</button>`; }).join('');
+    // 위쪽: 지금 페이지 위치
+    const crumb = document.getElementById('dcrumb');
+    if (crumb) crumb.innerHTML = cur.subTitle ? `<span class="dc-group">${cur.title}</span><span class="dc-sep">›</span><b>${cur.subTitle}</b>` : `<b>${cur.title}</b>`;
+  }
+
+  function setup() {
+    if (document.getElementById('dnav')) return;
+    const nav = document.createElement('nav'); nav.id = 'dnav';
+    document.body.appendChild(nav);
+    const bd = document.createElement('div'); bd.id = 'dbackdrop'; document.body.appendChild(bd);
+    document.body.classList.add('dlayout');
+    const bar = document.querySelector('.topbar');
+    const menuBtn = document.createElement('button'); menuBtn.id = 'dmenu-btn'; menuBtn.innerHTML = '☰'; menuBtn.setAttribute('aria-label', '메뉴');
+    const crumb = document.createElement('div'); crumb.id = 'dcrumb';
+    bar.insertBefore(menuBtn, bar.firstChild);
+    bar.insertBefore(crumb, bar.querySelector('.tabs'));
+    const mlogo = document.createElement('img'); mlogo.id = 'dmlogo'; mlogo.src = 'icons/icon-192.png'; mlogo.alt = 'Adecco'; bar.insertBefore(mlogo, crumb);
+    const rbtn = document.createElement('button'); rbtn.id = 'drefresh'; rbtn.setAttribute('aria-label', '새로고침'); rbtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>'; rbtn.addEventListener('click', () => location.reload()); bar.appendChild(rbtn);
+    const bottom = document.createElement('nav'); bottom.id = 'dbottom'; document.body.appendChild(bottom);
+    bottom.addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; const t = topTab(b.dataset.v); if (!t.classList.contains('active')) t.click(); window.scrollTo(0, 0); });
+    const note = document.getElementById('manager-note'); const av = document.getElementById('admin-view'); if (note && av) av.insertBefore(note, av.firstChild);
+    const cc = document.querySelector('.clock-card'); if (cc && !cc.querySelector('.dtoday')) { const h = document.createElement('h2'); h.className = 'dtoday'; h.textContent = '오늘 근무'; cc.insertBefore(h, cc.firstChild); }
+    const close = () => document.body.classList.remove('dnav-open');
+    menuBtn.addEventListener('click', () => document.body.classList.add('dnav-open'));
+    bd.addEventListener('click', close);
+    nav.addEventListener('click', (e) => {
+      if (e.target.closest('.dclose')) return close();
+      const b = e.target.closest('button[data-v]'); if (!b) return;
+      if (b.dataset.fold) { // 세부 메뉴가 있는 그룹 줄 → 접기/펼치기만
+        if (collapsed.has(b.dataset.v)) collapsed.delete(b.dataset.v); else collapsed.add(b.dataset.v);
+        try { localStorage.setItem('dnavCollapsed', JSON.stringify([...collapsed])); } catch (_) {}
+        return build();
+      }
+      const t = topTab(b.dataset.v);
+      if (!t.classList.contains('active')) t.click();
+      if (b.dataset.s) subRow(b.dataset.v)?.querySelector(`[data-sub="${b.dataset.s}"]`)?.click();
+      close();
+      window.scrollTo(0, 0);
+    });
+    // 탭 상태(활성·숨김·배지)가 바뀌면 사이드바·위치 표시를 다시 그림
+    const obs = new MutationObserver(() => { clearTimeout(obs.t); obs.t = setTimeout(build, 30); });
+    [document.querySelector('.topbar .tabs'), ...document.querySelectorAll('#admin-view .subtabs')].forEach((el) => el && obs.observe(el, { subtree: true, attributes: true, attributeFilter: ['class', 'hidden'], childList: true, characterData: true }));
+    build();
+  }
+
+  // 칸별 검색: 머리줄 아래에 검색칸 한 줄 (글자가 들어간 칸만 거름)
+  const SKIP = /^(|관리|처리|기록 수정|수정이력)$/;
+  function addSearch(table) {
+    if (!table.tHead || table.tHead.querySelector('tr.dsearch')) return;
+    const heads = [...table.tHead.rows[0].cells];
+    const tr = document.createElement('tr'); tr.className = 'dsearch';
+    tr.innerHTML = heads.map((th) => `<th>${SKIP.test(th.textContent.trim()) || th.querySelector('input') ? '' : '<input placeholder="검색...">'}</th>`).join('');
+    table.tHead.appendChild(tr);
+    const apply = () => {
+      const qs = [...tr.querySelectorAll('th')].map((th) => th.querySelector('input')?.value.trim().toLowerCase() || '');
+      [...table.tBodies[0].rows].forEach((row) => {
+        if (row.cells.length < heads.length) { row.style.display = ''; return; }
+        const hit = qs.every((q, i) => !q || (row.cells[i]?.textContent || '').toLowerCase().includes(q));
+        row.style.display = hit ? '' : 'none';
+      });
+    };
+    tr.addEventListener('input', apply);
+    new MutationObserver(apply).observe(table.tBodies[0], { childList: true });
+  }
+  const tableIds = ['ot-list', 'staff-summary', 'admin-records', 'staff-list', 'retired-list'];
+  const init = () => { tableIds.forEach((id) => { const tb = document.getElementById(id); if (tb) addSearch(tb.closest('table')); }); setup(); };
+  if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
+})();
