@@ -120,6 +120,29 @@
     new MutationObserver(apply).observe(table.tBodies[0], { childList: true });
   }
   const tableIds = ['ot-list', 'staff-summary', 'admin-records', 'staff-list', 'retired-list'];
-  const init = () => { tableIds.forEach((id) => { const tb = document.getElementById(id); if (tb) addSearch(tb.closest('table')); }); setup(); };
+  // 로그인 화면: 왼쪽(휴대폰은 위쪽) 남색 브랜드 영역 + 오른쪽 로그인 카드
+  function setupLogin() {
+    const lv = document.getElementById('login-view');
+    if (!lv || lv.querySelector('.dlogin-brand')) return;
+    // 흰 바탕 로그인 (시프티 로그인 화면 느낌): 왼쪽 위 CI·회사명, 오른쪽 위 문의 안내,
+    // 가운데 큰 '로그인' 제목 + 막대형 입력칸·버튼, 맨 아래 저작권 표시
+    const brand = document.createElement('header');
+    brand.className = 'dlogin-brand';
+    brand.innerHTML = '<span class="dlogin-logo"><img src="icons/icon-192.png" alt="Adecco"></span><b>아데코코리아</b>'
+      + '<span class="dlogin-ask">계정 관련 사항은 <b>담당 매니저</b>에게 문의해 주세요</span>';
+    lv.insertBefore(brand, lv.firstChild);
+    const form = document.getElementById('login-form');
+    if (form && !form.querySelector('.dlogin-title')) {
+      const t = document.createElement('div');
+      t.className = 'dlogin-title';
+      t.innerHTML = '<span class="dlogin-mci"><img src="icons/icon-192.png" alt="Adecco"></span><h2>로그인</h2>';
+      form.insertBefore(t, form.firstChild);
+    }
+    const foot = document.createElement('footer');
+    foot.className = 'dlogin-foot';
+    foot.textContent = `Copyright © ${new Date().getFullYear()} 아데코코리아. All rights reserved`;
+    lv.appendChild(foot);
+  }
+  const init = () => { tableIds.forEach((id) => { const tb = document.getElementById(id); if (tb) addSearch(tb.closest('table')); }); setup(); setupLogin(); };
   if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
 })();
