@@ -100,26 +100,6 @@
     build();
   }
 
-  // 칸별 검색: 머리줄 아래에 검색칸 한 줄 (글자가 들어간 칸만 거름)
-  const SKIP = /^(|관리|처리|기록 수정|수정이력)$/;
-  function addSearch(table) {
-    if (!table.tHead || table.tHead.querySelector('tr.dsearch')) return;
-    const heads = [...table.tHead.rows[0].cells];
-    const tr = document.createElement('tr'); tr.className = 'dsearch';
-    tr.innerHTML = heads.map((th) => `<th>${SKIP.test(th.textContent.trim()) || th.querySelector('input') ? '' : '<input placeholder="검색...">'}</th>`).join('');
-    table.tHead.appendChild(tr);
-    const apply = () => {
-      const qs = [...tr.querySelectorAll('th')].map((th) => th.querySelector('input')?.value.trim().toLowerCase() || '');
-      [...table.tBodies[0].rows].forEach((row) => {
-        if (row.cells.length < heads.length) { row.style.display = ''; return; }
-        const hit = qs.every((q, i) => !q || (row.cells[i]?.textContent || '').toLowerCase().includes(q));
-        row.style.display = hit ? '' : 'none';
-      });
-    };
-    tr.addEventListener('input', apply);
-    new MutationObserver(apply).observe(table.tBodies[0], { childList: true });
-  }
-  const tableIds = ['ot-list', 'staff-summary', 'admin-records', 'staff-list', 'retired-list'];
   // 로그인 화면: 왼쪽(휴대폰은 위쪽) 남색 브랜드 영역 + 오른쪽 로그인 카드
   function setupLogin() {
     const lv = document.getElementById('login-view');
@@ -138,11 +118,7 @@
       t.innerHTML = '<span class="dlogin-mci"><img src="icons/icon-192.png" alt="Adecco"></span><h2>로그인</h2>';
       form.insertBefore(t, form.firstChild);
     }
-    const foot = document.createElement('footer');
-    foot.className = 'dlogin-foot';
-    foot.textContent = `Copyright © ${new Date().getFullYear()} 아데코코리아. All rights reserved`;
-    lv.appendChild(foot);
   }
-  const init = () => { tableIds.forEach((id) => { const tb = document.getElementById(id); if (tb) addSearch(tb.closest('table')); }); setup(); setupLogin(); };
+  const init = () => { setup(); setupLogin(); };
   if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
 })();

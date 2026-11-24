@@ -60,9 +60,6 @@ th { background: #fff; color: #4b5563; font-weight: 700; font-size: 12.5px; bord
 th, td { padding: 12px 10px; }
 td { vertical-align: middle; }
 tbody tr:hover td { background: #fafbfc; }
-tr.dsearch th { padding: 6px 6px 8px; background: #fff; }
-tr.dsearch input { width: 100%; min-width: 60px; padding: 5px 8px; font-size: 12px; border-radius: 4px; border: 1px solid #e5e7eb; background: #fff; }
-tr.dsearch input::placeholder { color: #b6bcc6; }
 tr.day-head td { background: #f7f8fa; border-top: 1px solid var(--line); color: #374151; }
 
 /* 상태 배지 */
@@ -88,7 +85,6 @@ tr.day-head td { background: #f7f8fa; border-top: 1px solid var(--line); color: 
   body.dlayout .topbar { padding: 0 12px; gap: 8px; }
   #dcrumb .dc-group, #dcrumb .dc-sep { display: none; }
   .container { padding: 12px; }
-  tr.dsearch { display: none !important; }
 }
 
 /* ---- 시프티 톤 색감 (표·알림·버튼) ---- */
@@ -211,7 +207,6 @@ body:has(#app-view[hidden]) #dnav, body:has(#app-view[hidden]) #dbottom, body:ha
 #login-form .a2hs-open::after { content: ''; position: absolute; top: -18px; left: -1px; right: -1px; height: 1px; background: #e4e7ec; }
 #login-form .a2hs-open:hover { background: #f9fafb; }
 #login-error { text-align: center; }
-.dlogin-foot { margin-top: auto; padding: 40px 16px 22px; font-size: 12px; color: #9ca3af; }
 
 /* 휴대폰: 앱 첫 화면처럼 가운데 큰 CI + 회사명, 아래로 입력칸과 큰 버튼 */
 @media (max-width: 760px) {
