@@ -504,3 +504,49 @@ body.dlayout #app-view td input[type="text"], body.dlayout #app-view td input[ty
 
 .clock-card.sflat #dgreet, .clock-card .dgreet { font-size: 22px; font-weight: 800; color: #191f28; margin: 4px 2px 2px; letter-spacing: -0.03em; }
 .dgreet:empty { display: none; }
+
+/* ===== 메뉴 배치 (2026-11-25): PC는 위쪽 메뉴 + 알약형 작은 탭(사이드바 숨김), 휴대폰은 ☰ 서랍(카드형 꾸밈) ===== */
+@media (min-width: 901px) {
+
+body.ntop #dnav { display: none !important; }
+body.ntop.dlayout #app-view { padding-left: 0; }
+body.ntop .topbar { position: sticky; top: 0; z-index: 40; gap: 28px; min-height: 64px; padding: 0 32px; }
+body.ntop #dcrumb { display: none; }
+#nbrand { display: flex; align-items: center; gap: 10px; flex: none; }
+#nbrand b { font-size: 16px; font-weight: 800; color: #191f28; letter-spacing: -0.02em; }
+.nlogo { width: 36px; height: 36px; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 1px 4px rgba(0,27,55,.1); }
+.nlogo img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.22); display: block; }
+#ntop { display: flex; align-items: stretch; gap: 4px; align-self: stretch; }
+#ntop button { font: inherit; border: 0; background: transparent; cursor: pointer; padding: 0 14px; font-size: 15px; font-weight: 700; color: #8b95a1; position: relative; display: flex; align-items: center; gap: 6px; }
+#ntop button:hover { color: #333d4b; }
+#ntop button.on { color: #191f28; }
+#ntop button.on::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: #3182f6; }
+.nbadge { font-style: normal; background: #f04452; color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 0 6px; line-height: 18px; }
+
+/* 작은 탭: 알약 버튼 줄 (원래 탭 버튼을 그대로 보여 줌) */
+body.ntop.dlayout #admin-view .subtabs:not([hidden]) { display: flex !important; flex-wrap: wrap; gap: 8px; border: 0; margin: 4px 0 16px; padding: 0; background: transparent; }
+body.ntop #admin-view .subtabs .subtab { border: 0; background: #fff; color: #4e5968; font-weight: 700; font-size: 14px; border-radius: 999px; padding: 9px 16px; box-shadow: 0 1px 4px rgba(0,27,55,.06); margin: 0; }
+body.ntop #admin-view .subtabs .subtab:hover { background: #f2f4f6; }
+body.ntop #admin-view .subtabs .subtab.active { background: #3182f6; color: #fff; box-shadow: 0 4px 12px rgba(49,130,246,.25); }
+body.ntop #admin-view .subtabs .subtab.active::after, body.ntop #admin-view .subtabs .subtab::after { display: none; }
+body.ntop #admin-view .subtabs .ot-badge { background: #f04452; color: #fff; }
+body.ntop #admin-view .subtabs .subtab.active .ot-badge { background: #fff; color: #3182f6; }
+body.ntop #admin-view .subtabs .subtab.feat-job { display: none; }
+  /* PC에서는 홈 화면 바로가기 안내 버튼을 숨김 */
+  .a2hs-open { display: none !important; }
+}
+/* 휴대폰 서랍: 아이콘 칸·선택 표시를 본문 카드 모양에 맞춤 */
+#dnav .dhead { border-bottom: 0 !important; padding: 18px 16px 10px; }
+#dnav .dlogo { border-radius: 12px; }
+#dnav .dmenu { gap: 6px; padding: 6px 12px 20px; }
+#dnav button { border-radius: 12px !important; }
+/* 아이콘: 옅은 바탕 둥근 칸 안에 (본문 점포 카드 아이콘과 같은 모양) */
+#dnav .dtop svg:not(.dchev) { width: 32px !important; height: 32px !important; padding: 7px; box-sizing: border-box; border-radius: 10px; background: #f2f4f6; color: #8b95a1 !important; }
+#dnav .dgroup.on > .dtop svg:not(.dchev) { background: #e8f3ff; color: #3182f6 !important; }
+#dnav .dtop { font-size: 15px; font-weight: 800; padding: 8px 10px; }
+/* 선택 표시는 한 가지: 옅은 파랑 바탕 + 파란 굵은 글씨 (점 없음) */
+#dnav .dsub { padding: 9px 12px 9px 52px; font-size: 14px; }
+#dnav .dsub.on::before { display: none; }
+#dnav .dsub.on { background: #e8f3ff; color: #3182f6; font-weight: 800; }
+#dnav .dgroup:not(:has(.dsubs)).on > .dtop, #dnav .dgroup.folded.on > .dtop { background: #e8f3ff; color: #3182f6; }
+@media (max-width: 900px) { #nbrand, #ntop { display: none !important; } }

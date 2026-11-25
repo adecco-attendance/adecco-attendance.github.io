@@ -141,6 +141,38 @@
       d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
-  const init = () => { setup(); setupLogin(); setupShopl(); };
+  // PC 위쪽 메뉴 (2026-11-25): 위쪽 띠에 CI + 큰 메뉴, 작은 탭은 원래 탭 버튼을 알약 모양으로 보여 줌(CSS).
+  // 휴대폰(≤900px)에서는 CSS가 이 메뉴를 숨기고 ☰ 서랍(#dnav)을 씀
+  function buildTopNav() {
+    const nav = document.getElementById('ntop');
+    if (!nav) return;
+    nav.innerHTML = ORDER.map((v) => {
+      const t = topTab(v);
+      if (!t || t.hidden) return '';
+      const bd = badgeOf(t);
+      return `<button type="button" data-v="${v}" class="${t.classList.contains('active') ? 'on' : ''}">${cleanText(t)}${bd ? `<i class="nbadge">${bd}</i>` : ''}</button>`;
+    }).join('');
+  }
+  function setupTopNav() {
+    const bar = document.querySelector('.topbar');
+    if (!bar || document.getElementById('ntop')) return;
+    document.body.classList.add('ntop');
+    const brand = document.createElement('div'); brand.id = 'nbrand';
+    brand.innerHTML = '<span class="nlogo"><img src="icons/icon-192.png" alt="Adecco"></span><b>아데코코리아</b>';
+    const nav = document.createElement('nav'); nav.id = 'ntop';
+    const crumb = document.getElementById('dcrumb');
+    bar.insertBefore(brand, crumb); bar.insertBefore(nav, crumb);
+    nav.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-v]'); if (!b) return;
+      const t = topTab(b.dataset.v);
+      if (t && !t.classList.contains('active')) t.click();
+      window.scrollTo(0, 0);
+    });
+    const obs = new MutationObserver(() => { clearTimeout(obs.t); obs.t = setTimeout(buildTopNav, 30); });
+    const tabs = document.querySelector('.topbar .tabs');
+    if (tabs) obs.observe(tabs, { subtree: true, attributes: true, attributeFilter: ['class', 'hidden'], childList: true, characterData: true });
+    buildTopNav();
+  }
+  const init = () => { setup(); setupLogin(); setupShopl(); setupTopNav(); };
   if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
 })();
