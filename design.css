@@ -225,3 +225,33 @@ body:has(#app-view[hidden]) #dnav, body:has(#app-view[hidden]) #dbottom, body:ha
 
 /* PC 로그인 화면에서는 '홈 화면에 바로가기 추가' 숨김 (휴대폰에서만 보임) */
 @media (min-width: 761px) { #login-form .a2hs-open { display: none; } }
+
+/* ---- 본문을 사이드바 남색 톤과 맞춤 (2026-11-25): 색·모양만 변경, 기능·문구는 그대로 ---- */
+:root { --nav2: #24427d; --navtint: #eef2f9; --navline: #d9e1ef; }
+/* 위쪽 머리줄: 사이드바와 이어지는 남색 밑줄 */
+body.dlayout .topbar { border-bottom: 1px solid var(--navline); box-shadow: inset 0 -2px 0 var(--nav); }
+#dcrumb b { color: var(--nav); }
+#dcrumb .dc-group { color: #7a88a6; }
+/* 카드: 남색 윗선 + 남색 제목 */
+body.dlayout #app-view .card { border: 1px solid var(--navline); border-top: 3px solid var(--nav); border-radius: 6px; }
+body.dlayout #app-view .card-head h2, body.dlayout .clock-card .dtoday { color: var(--nav); }
+/* 필터 줄: 옅은 남색 바탕 판 위에, 입력칸·선택칸·버튼 높이를 38px로 통일 */
+body.dlayout #app-view form.filters, body.dlayout #app-view div.filters { background: var(--navtint); border: 1px solid var(--navline); border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; align-items: flex-end; }
+body.dlayout #app-view .filters > label { color: #51607f; font-weight: 600; font-size: 12px; }
+body.dlayout #app-view .filters input, body.dlayout #app-view .filters select, body.dlayout #app-view .filters .btn { height: 38px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
+body.dlayout #app-view .filters input, body.dlayout #app-view .filters select { border-color: #cfd8e8; background-color: #fff; }
+/* 표 머리줄: 옅은 남색 바탕 + 남색 글씨 */
+body.dlayout #app-view th { background: var(--navtint); color: var(--nav); border-top: 1px solid var(--navline); border-bottom: 1px solid var(--navline); }
+body.dlayout #app-view td { border-bottom-color: #e8edf5; }
+body.dlayout #app-view tbody tr:hover td { background: #f6f8fc; }
+tr.day-head td { background: #f3f6fb !important; color: var(--nav); }
+tr.total td, tr.total.top td { background: #e9eff9 !important; color: var(--nav) !important; }
+/* 버튼: 주 버튼은 사이드바와 같은 남색, 보조(엑셀·새로고침)는 남색 테두리 */
+body.dlayout #app-view .btn.primary { background: var(--nav); border-color: var(--nav); }
+body.dlayout #app-view .btn.primary:hover:not(:disabled) { background: var(--nav2); border-color: var(--nav2); }
+body.dlayout #app-view #summary-csv-btn, body.dlayout #app-view #csv-btn, body.dlayout #app-view #ot-csv-btn, body.dlayout #app-view #today-refresh { color: var(--nav); border-color: var(--nav); background: #fff; }
+body.dlayout #app-view #summary-csv-btn:hover, body.dlayout #app-view #csv-btn:hover, body.dlayout #app-view #ot-csv-btn:hover, body.dlayout #app-view #today-refresh:hover { background: var(--navtint); }
+/* 표 안의 승인 버튼도 남색 테두리 */
+#ot-list .btn.primary, td .btn.primary { background: #fff !important; color: var(--nav) !important; border: 1px solid var(--nav) !important; }
+/* 작은 정보 문구 */
+body.dlayout #app-view .card > p.muted { color: #6b7894; }
