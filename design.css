@@ -665,3 +665,14 @@ body.ntop #admin-view .subtabs .subtab.feat-job { display: none; }
 @media (max-width: 600px) { .hd-b .hchip > span { display: inline; } }
 /* 휴대폰: 슈퍼바이저는 '내 출퇴근'을 '이번 주 일정'보다 위에 (다른 권한은 내 출퇴근 칸이 없어 영향 없음) */
 @media (max-width: 900px) { .h-att { order: 1; } .h-me { order: 2; } .h-week { order: 3; } .h-ot { order: 4; } .h-notice { order: 5; } }
+/* 휴대폰(2026-11-25): ☰ 서랍은 그대로 두고, 위쪽에 알약 모양 작은 탭 줄도 함께 보여 줌 (가로로 밀어서 넘김) */
+@media (max-width: 900px) {
+  body.dlayout #admin-view .subtabs:not([hidden]) { display: flex !important; flex-wrap: nowrap; gap: 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; border: 0; margin: 0 -16px 12px; padding: 2px 16px 6px; background: transparent; }
+  body.dlayout #admin-view .subtabs::-webkit-scrollbar { display: none; }
+  body.dlayout #admin-view .subtabs .subtab { flex: none; border: 0; background: #fff; color: #4e5968; font-weight: 700; font-size: 13.5px; border-radius: 999px; padding: 8px 14px; box-shadow: 0 1px 4px rgba(0,27,55,.06); margin: 0; white-space: nowrap; }
+  body.dlayout #admin-view .subtabs .subtab.active { background: #3182f6; color: #fff; box-shadow: 0 4px 12px rgba(49,130,246,.25); }
+  body.dlayout #admin-view .subtabs .subtab::after { display: none; }
+  body.dlayout #admin-view .subtabs .ot-badge { background: #f04452; color: #fff; }
+  body.dlayout #admin-view .subtabs .subtab.active .ot-badge { background: #fff; color: #3182f6; }
+  body.dlayout #admin-view .subtabs .subtab.feat-job, body.dlayout #admin-view .subtabs #manager-note { display: none; }
+}
