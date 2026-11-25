@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="style.css">
   <!-- 화면 디자인 (2026-11-23, 시안 D): 글꼴 Pretendard + 사이드바 레이아웃. 되돌리려면 아래 두 줄과 design.js 줄을 지우면 됨 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="design.css?v=20261125b">
+  <link rel="stylesheet" href="design.css?v=20261125c">
 </head>
 <body>
   <div id="config-warning" class="banner" hidden>
@@ -83,6 +83,8 @@
     <!-- 직원 화면 -->
     <section id="employee-view" class="container">
       <div class="card clock-card">
+        <h2 id="dgreet" class="dgreet"></h2>
+        <div class="ssched"><h3>오늘 스케줄</h3><span class="spill"><i></i><span id="sched-pill">근무</span></span><p id="sched-line"></p></div>
         <div id="me-line" class="me-line"><strong id="me-name"></strong><span id="me-branch"></span></div>
         <div id="now-date" class="now-date"></div>
         <div id="now-time" class="now-time"></div>
@@ -648,7 +650,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="config.js"></script>
-  <script src="app.js?v=20261125b"></script>
-  <script src="design.js?v=20261125b"></script>
+  <script src="app.js?v=20261125c"></script>
+  <script src="design.js?v=20261125c"></script>
 </body>
 </html>

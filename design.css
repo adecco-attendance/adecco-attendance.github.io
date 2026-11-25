@@ -485,3 +485,22 @@ body.dlayout #app-view td input[type="text"], body.dlayout #app-view td input[ty
   #branch-list tr.sel .time-input { width: 120px; }
   .bsec { padding: 14px; }
 }
+
+/* ===== 출·퇴근 등록 (샤플형): 인사말 + 오늘 스케줄 카드 + 파란 시계 카드 ===== */
+.clock-card.sflat { background: transparent !important; box-shadow: none !important; padding: 0 !important; gap: 14px; }
+.clock-card.sflat .me-line { display: none; }
+.clock-card.sflat #dgreet { font-size: 22px; font-weight: 800; color: #191f28; margin: 4px 2px 2px; letter-spacing: -0.03em; }
+.ssched { background: #fff; border-radius: 18px; padding: 18px 20px; box-shadow: 0 2px 10px rgba(0,27,55,.06); display: grid; gap: 10px; justify-items: start; }
+.ssched h3 { margin: 0; font-size: 17px; font-weight: 800; color: #191f28; }
+.spill { display: inline-flex; align-items: center; gap: 6px; background: #e8f3ff; color: #3182f6; font-weight: 700; font-size: 13px; border-radius: 8px; padding: 4px 10px; }
+.spill i { width: 6px; height: 6px; border-radius: 50%; background: #3182f6; }
+#sched-line { margin: 0; font-size: 15px; color: #333d4b; }
+.ssched #work-hours { margin: 0; color: #e08a00; font-weight: 600; white-space: pre-line; }
+.clock-card .sclock { border-radius: 20px; padding: 22px 20px 20px; }
+.clock-card .sclock .now-date { font-size: 15px; font-weight: 500; }
+.clock-card .sclock .now-time { font-size: 34px; margin-top: -4px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,.25); }
+.clock-card.sflat .a2hs-open { margin-left: 4px; }
+.clock-card.sflat #clock-msg, .clock-card.sflat .gps-box { background: #fff; border-radius: 14px; padding: 12px 14px; }
+
+.clock-card.sflat #dgreet, .clock-card .dgreet { font-size: 22px; font-weight: 800; color: #191f28; margin: 4px 2px 2px; letter-spacing: -0.03em; }
+.dgreet:empty { display: none; }

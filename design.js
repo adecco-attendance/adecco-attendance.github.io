@@ -76,7 +76,7 @@
     const bottom = document.createElement('nav'); bottom.id = 'dbottom'; document.body.appendChild(bottom);
     bottom.addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; const t = topTab(b.dataset.v); if (!t.classList.contains('active')) t.click(); window.scrollTo(0, 0); });
     const note = document.getElementById('manager-note'); const av = document.getElementById('admin-view'); if (note && av) av.insertBefore(note, av.firstChild);
-    const cc = document.querySelector('.clock-card'); if (cc && !cc.querySelector('.dtoday')) { const h = document.createElement('h2'); h.className = 'dtoday'; h.textContent = '오늘 근무'; cc.insertBefore(h, cc.firstChild); }
+    const cc = document.querySelector('.clock-card'); if (cc && !cc.querySelector('.dtoday') && !document.getElementById('dgreet')) { const h = document.createElement('h2'); h.className = 'dtoday'; h.textContent = '오늘 근무'; cc.insertBefore(h, cc.firstChild); }
     const close = () => document.body.classList.remove('dnav-open');
     menuBtn.addEventListener('click', () => document.body.classList.add('dnav-open'));
     bd.addEventListener('click', close);
@@ -130,6 +130,9 @@
         if (el) box.appendChild(el);
       });
       cc.insertBefore(box, cc.querySelector('#gps-box'));
+      // 인사말·오늘 스케줄 카드(index.html)에 특정일·지원 안내 문구를 옮김
+      const sc = cc.querySelector('.ssched'); const wh = document.getElementById('work-hours'); if (sc && wh) sc.appendChild(wh);
+      cc.classList.add('sflat');
     }
     const kpi = document.getElementById('today-kpi'); const mo = document.getElementById('missout-box');
     if (kpi && mo) mo.parentNode.insertBefore(kpi, mo);

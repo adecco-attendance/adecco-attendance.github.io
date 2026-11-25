@@ -587,7 +587,7 @@
   function tick() {
     const now = new Date();
     const o = kst(now);
-    $('now-date').textContent = `${o.year}년 ${Number(o.month)}월 ${Number(o.day)}일 (${weekdayFmt.format(now)})`;
+    $('now-date').textContent = SHOPL ? `오늘은 ${Number(o.month)}월 ${Number(o.day)}일 ${weekdayFmt.format(now)}요일이에요 :)` : `${o.year}년 ${Number(o.month)}월 ${Number(o.day)}일 (${weekdayFmt.format(now)})`;
     $('now-time').textContent = `${o.hour}:${o.minute}:${o.second}`;
     if (todayRow && todayRow.clock_in && !todayRow.clock_out) {
       $('today-dur').textContent = fmtDur(now - new Date(todayRow.clock_in));
@@ -868,6 +868,12 @@
     $('work-hours').hidden = !note;
     $('work-hours').textContent = note;
     $('work-hours').classList.toggle('support-note', !!note);
+    // 샤플형: 인사말 + 오늘 스케줄 카드 (근무 시간 · 점포)
+    if ($('dgreet')) $('dgreet').textContent = me?.name ? `${me.name}님, 반가워요!` : '';
+    if ($('sched-line')) {
+      $('sched-pill').textContent = b?.support ? '지원 근무' : hrs.special ? '특정일 근무' : '근무';
+      $('sched-line').textContent = b?.name ? `근무 ${ws && we ? `${ws}~${we} ` : ''}(${b.name})` : '소속 점포가 없습니다.';
+    }
     $('ot-date').value = today;
     $('ot-start').value = we || '18:00';
     const [h, m] = ($('ot-start').value).split(':').map(Number);
