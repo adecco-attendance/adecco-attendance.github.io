@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="style.css">
   <!-- 화면 디자인 (2026-11-23, 시안 D): 글꼴 Pretendard + 사이드바 레이아웃. 되돌리려면 아래 두 줄과 design.js 줄을 지우면 됨 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="design.css?v=20261125f">
+  <link rel="stylesheet" href="design.css?v=20261125g">
 </head>
 <body>
   <div id="config-warning" class="banner" hidden>
@@ -58,6 +58,7 @@
     <header class="topbar">
       <strong class="brand"><span class="company-name"></span></strong>
       <nav class="tabs">
+        <button class="tab" data-view="home" id="home-tab" hidden>홈</button>
         <button class="tab active" data-view="employee">출·퇴근 등록</button>
         <button class="tab" data-view="notice" id="notice-tab">공지사항<span id="notice-badge" class="ot-badge" hidden></span></button>
         <button class="tab" data-view="admin" id="admin-tab" hidden>근태 관리</button>
@@ -68,6 +69,40 @@
         <button class="btn ghost small" id="logout-btn">로그아웃</button>
       </div>
     </header>
+
+    <!-- 홈 (총괄·권역 매니저·슈퍼바이저): 오늘 출퇴근·이번 주 일정·초과근무 승인 대기·공지를 한 화면에. 칸을 누르면 해당 메뉴로 -->
+    <section id="home-view" class="container" hidden>
+      <div class="hhead"><h2 id="h-greet" class="hgreet"></h2><p id="h-scope" class="hscope"></p></div>
+      <div class="hgrid" id="hgrid">
+        <div class="hcard h-att" data-go="admin:today">
+          <h3><span class="hic hic-att"></span>오늘 출퇴근<span class="hgo">›</span></h3>
+          <div class="h-att-grid">
+            <div class="hbig"><span>오늘 출근</span><b><em id="h-in">-</em><small>명</small></b></div>
+            <div class="hwork"><span><i class="pdot p-work"></i>현재 근무 중</span><div class="hrow"><b id="h-working">-</b><div id="h-avs" class="havs"></div></div></div>
+            <div class="hsm"><span><i class="pdot p-out"></i>퇴근</span><b id="h-out">-</b></div>
+            <div class="hsm hwarn"><span title="최근 7일(오늘 제외) 출근만 있고 퇴근이 없는 기록"><i class="hdot"></i>퇴근 미기록</span><b id="h-miss">-</b></div>
+          </div>
+        </div>
+        <div class="hcard h-week" id="h-week-card">
+          <h3><span class="hic hic-week"></span>이번 주 일정<span class="hgo">›</span></h3>
+          <div id="h-week" class="hweek"></div>
+          <p class="hlegend"><i class="hchip short"></i>단축근무일 <i class="hchip sup"></i>지원 근무</p>
+        </div>
+        <div class="hcard h-me" id="h-me-card" data-go="employee" hidden>
+          <h3><span class="hic hic-me"></span>내 출퇴근<span class="hgo">›</span></h3>
+          <div class="hme"><div><span>출근</span><b id="h-me-in">-</b></div><div><span>퇴근</span><b id="h-me-out">-</b></div></div>
+          <p id="h-me-st" class="hme-st"></p>
+        </div>
+        <div class="hcard h-ot" data-go="admin:overtime">
+          <h3><span class="hic hic-ot"></span>초과근무 승인 대기<b id="h-ot-n" class="hcount"></b><span class="hgo">›</span></h3>
+          <div id="h-ot-list" class="hlist"></div>
+        </div>
+        <div class="hcard h-notice" data-go="notice">
+          <h3><span class="hic hic-notice"></span>공지사항<span class="hgo">›</span></h3>
+          <div id="h-notice-list" class="hlist"></div>
+        </div>
+      </div>
+    </section>
 
     <!-- 공지사항 (모두 읽기, 매니저만 작성) -->
     <section id="notice-view" class="container" hidden>
@@ -634,7 +669,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="config.js"></script>
-  <script src="app.js?v=20261125f"></script>
-  <script src="design.js?v=20261125f"></script>
+  <script src="app.js?v=20261125g"></script>
+  <script src="design.js?v=20261125g"></script>
 </body>
 </html>

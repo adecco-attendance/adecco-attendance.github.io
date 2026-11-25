@@ -285,6 +285,7 @@
     await loadMyScope(); // 권역 매니저: 담당 점포
     // 관리 화면: 총괄·권역 매니저 또는 슈퍼바이저(담당 점포만)
     $('admin-tab').hidden = !(isMgr() || isManager());
+    $('home-tab').hidden = !(isMgr() || isManager()); // 홈: 근태 관리 권한이 있는 사람만
     document.querySelectorAll('.hq-only').forEach((el) => { el.hidden = !isMgr(); });     // '관리자 메뉴' 탭: 총괄·권역 매니저
     document.querySelectorAll('.hq-total').forEach((el) => { el.hidden = !isHQ(); });     // 총괄 매니저만 (점포 추가 등)
     $('manager-note').hidden = !(isManager() || isRegion());
@@ -296,7 +297,7 @@
     // 총괄·권역 매니저는 출퇴근 등록 대상이 아님 → '출·퇴근 등록' 탭을 숨기고 근태 관리부터 보여 줌 (위치 확인도 안 함)
     const worker = !isMgr();
     document.querySelector('.tab[data-view="employee"]').hidden = !worker;
-    switchTab(worker ? 'employee' : 'admin');
+    switchTab(!$('home-tab').hidden ? 'home' : worker ? 'employee' : 'admin');
     showView('app');
     checkSession();
     if (!worker) return;
@@ -415,6 +416,8 @@
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
     $('employee-view').hidden = view !== 'employee';
     $('notice-view').hidden = view !== 'notice';
+    $('home-view').hidden = view !== 'home';
+    if (view === 'home') loadHome();
     // 근태 관리 / 관리자 메뉴: 같은 화면, 위 탭에 맞는 작은 탭 줄만 보이고 마지막으로 보던 작은 탭을 다시 엶
     const adm = view === 'admin' || view === 'hq';
     $('admin-view').hidden = !adm;
@@ -1422,6 +1425,120 @@
   $('missout-list').addEventListener('click', (e) => {
     const id = e.target.closest('[data-missout]')?.dataset.missout;
     if (id) openEdit(missOutRows.find((r) => String(r.id) === id)); // 기존 기록 수정 창 재사용 (저장하면 현황이 다시 그려짐)
+  });
+
+  // ---- 홈 (총괄·권역 매니저·슈퍼바이저): 권한 범위 안의 오늘 출퇴근·이번 주 일정·초과근무 대기·공지 ----
+  const inScope = (bid) => (isHQ() ? true : isRegion() ? myScope.has(bid) : bid === me.branch_id);
+  const HAV = ['#3182f6', '#f04452', '#00b386', '#ff9f1a', '#8b5cf6', '#14b8c4'];
+  const havColor = (n) => HAV[[...(n || '?')].reduce((a, ch) => a + ch.charCodeAt(0), 0) % HAV.length];
+  let homeOt = [];
+  let homeSeq = 0;
+  async function loadHome() {
+    if (!me) return;
+    const seq = ++homeSeq;
+    $('h-greet').textContent = `${me.name}님, 반가워요!`;
+    if (!adminLoaded) await initAdmin(); else await Promise.all([loadBranches(), loadStaff()]);
+    if (seq !== homeSeq) return;
+    const scoped = scopeBranches().filter((b) => (isManager() ? b.id === me.branch_id : true));
+    $('h-scope').textContent = isHQ() ? `총괄 매니저 · 전체 점포 ${branches.filter((b) => b.is_active).length}곳`
+      : isRegion() ? `권역 매니저 · 담당 점포 ${scoped.length}곳 (${scoped.map((b) => b.name).join(', ')})`
+        : `${me.branch?.name || ''} 슈퍼바이저`;
+    const today = ymd(new Date());
+    const from7 = ymd(new Date(Date.now() - 7 * 864e5));
+    const [att, miss, ot, mine] = await Promise.all([
+      fetchAll(() => sb.from('attendance').select('id, user_id, branch_id, clock_in, clock_out, profile:profiles!attendance_user_id_fkey(name)').eq('work_date', today).order('clock_in')),
+      sb.from('attendance').select('id, branch_id').is('clock_out', null).gte('work_date', from7).lt('work_date', today).limit(500),
+      sb.from('overtime_requests').select('*, branch:branches!overtime_requests_branch_id_fkey(name), profile:profiles!overtime_requests_user_id_fkey(name)')
+        .eq('status', 'pending').order('work_date', { ascending: false }).order('start_at').limit(200),
+      isManager() ? sb.from('attendance').select('clock_in, clock_out').eq('user_id', me.id).eq('work_date', today).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    if (seq !== homeSeq) return;
+    // 오늘 출퇴근
+    const recs = (att.data || []).filter((r) => inScope(r.branch_id));
+    const working = recs.filter((r) => !r.clock_out);
+    $('h-in').textContent = recs.length;
+    $('h-working').textContent = working.length;
+    $('h-out').textContent = recs.length - working.length;
+    $('h-miss').textContent = (miss.data || []).filter((r) => inScope(r.branch_id)).length;
+    $('h-avs').innerHTML = working.slice(0, 5).map((r) => { const n = r.profile?.name || ''; return `<span style="background:${havColor(n)}" title="${esc(n)}">${esc(n.slice(0, 1))}</span>`; }).join('')
+      + (working.length > 5 ? `<span class="more">+${working.length - 5}</span>` : '');
+    // 내 출퇴근 (슈퍼바이저만: 본인도 출퇴근 대상)
+    $('h-me-card').hidden = !isManager();
+    $('hgrid').classList.toggle('no-me', !isManager());
+    if (isManager()) {
+      const m = mine.data;
+      $('h-me-in').textContent = m ? hm(m.clock_in) : '-';
+      $('h-me-out').textContent = m?.clock_out ? hm(m.clock_out) : '-';
+      $('h-me-st').textContent = !m ? '아직 출근 전입니다' : m.clock_out ? '오늘 근무를 마쳤습니다' : '근무 중입니다';
+      $('h-me-st').className = `hme-st ${!m ? 'pre' : m.clock_out ? 'done' : 'on'}`;
+    }
+    // 초과근무 승인 대기 (본인 신청은 총괄이 처리하므로 슈퍼바이저·권역 매니저 화면에서는 버튼 없음)
+    homeOt = (ot.data || []).filter((q) => inScope(q.branch_id));
+    $('h-ot-n').textContent = homeOt.length ? `${homeOt.length}건` : '';
+    $('h-ot-list').innerHTML = homeOt.slice(0, 3).map((q) => {
+      const n = q.profile?.name || '';
+      const mineOt = noSelf() && q.user_id === me.id;
+      return `<div class="hot" data-hot="${q.id}">
+        <span class="pav" style="background:${havColor(n)}">${esc(n.slice(0, 1))}</span>
+        <div class="hot-i"><b>${esc(n)}<small>${esc(q.branch?.name || '미지정')}</small></b><span>${dateLabel(q.work_date)} ${otTimeLabel(q)} · ${esc(q.reason || '')}</span></div>
+        <div class="hot-b">${mineOt ? '<span class="muted small">매니저 처리</span>' : '<button type="button" class="hbtn no" data-hot-no>반려</button><button type="button" class="hbtn ok" data-hot-ok>승인</button>'}</div>
+      </div>`;
+    }).join('') + (homeOt.length > 3 ? `<p class="hmore">외 ${homeOt.length - 3}건 더 보기 ›</p>` : '') || '<p class="hempty">대기 중인 신청이 없습니다.</p>';
+    // 이번 주 일정 (월~일): 단축근무일 · 지원 근무
+    const base = new Date(`${today}T12:00:00+09:00`);
+    const dow = (base.getUTCDay() + 6) % 7; // 월=0
+    const days = [...Array(7)].map((_, i) => shiftDate(today, i - dow));
+    const WD = ['월', '화', '수', '목', '금', '토', '일'];
+    const specs = [...specialHours.values()];
+    const shortTm = (t) => { const s = tmLabel(t); return s.endsWith(':00') ? String(Number(s.slice(0, 2))) : s; }; // 14:00 → 14 (좁은 칸용)
+    $('h-week').innerHTML = days.map((d, i) => {
+      const items = [
+        ...specs.filter((h) => h.work_date === d && inScope(h.branch_id)).map((h) => `<span class="hchip short" title="${esc(h.note || '')}"><b>${esc(branchName(h.branch_id))}</b><span>${shortTm(h.work_start)}~${shortTm(h.work_end)}시</span></span>`),
+        ...supports.filter((s) => s.start_date <= d && d <= s.end_date && (inScope(s.to_branch_id) || inScope(s.from_branch_id))).map((s) => `<span class="hchip sup"><b>${esc(s.person?.name || '')}</b><span>→ ${esc(s.to_branch?.name || '')}</span></span>`),
+      ];
+      return `<div class="hday${d === today ? ' today' : ''}${items.length ? '' : ' empty'}${i > 4 ? ' wkend' : ''}"><div class="hd-h"><span>${WD[i]}</span><b>${Number(d.slice(8))}</b></div><div class="hd-b">${items.join('')}</div></div>`;
+    }).join('');
+    const wc = $('h-week-card');
+    wc.dataset.go = isMgr() ? 'hq:branches' : '';
+    wc.classList.toggle('nogo', !isMgr());
+    renderHomeNotices();
+    loadNotices().then(renderHomeNotices);
+  }
+  function renderHomeNotices() {
+    const total = staff.filter((s) => !s.deleted_at && isWorker(s)).length;
+    $('h-notice-list').innerHTML = notices.slice(0, 3).map((x) => {
+      const r = noticeReaders.get(x.id) || 0;
+      const pct = total ? Math.min(100, Math.round((r / total) * 100)) : 0;
+      return `<div class="hnote">
+        <b>${x.pinned ? '<span class="pin">중요</span>' : ''}${!noticeRead.has(x.id) ? '<span class="new">NEW</span>' : ''}${esc(x.title)}</b>
+        <span class="muted small">${ymd(x.created_at).slice(5).replace('-', '.')}${x.author?.name ? ` · ${esc(x.author.name)}` : ''}</span>
+        ${me?.is_admin ? `<div class="hread"><div class="hbar"><i style="width:${pct}%"></i></div><span>읽음 <b>${r}</b> / ${total}명</span></div>` : ''}
+      </div>`;
+    }).join('') || '<p class="hempty">등록된 공지사항이 없습니다.</p>';
+  }
+  // 칸 누르면 해당 메뉴로 (data-go="위탭:작은탭")
+  $('home-view').addEventListener('click', async (e) => {
+    const ok = e.target.closest('[data-hot-ok]'); const no = e.target.closest('[data-hot-no]');
+    if (ok || no) {
+      const q = homeOt.find((x) => String(x.id) === e.target.closest('[data-hot]').dataset.hot);
+      if (!q) return;
+      const label = `${q.profile?.name}님의 초과근무(${dateLabel(q.work_date)} ${otTimeLabel(q)})`;
+      const note = prompt(ok ? `${label}를 승인합니다.\n메모(선택):` : `${label}를 반려합니다.\n반려 사유(필수):`, '');
+      if (note === null) return;
+      if (no && !note.trim()) return alert('반려 사유를 입력하세요.');
+      const { error } = await sb.rpc('review_overtime', { p_id: q.id, p_approve: !!ok, p_note: note.trim() || null });
+      if (error) return alert(errMsg(error));
+      loadHome(); loadOtBadge();
+      return;
+    }
+    const card = e.target.closest('.hcard[data-go]');
+    if (!card || !card.dataset.go) return;
+    const [v, s] = card.dataset.go.split(':');
+    const t = document.querySelector(`.topbar .tab[data-view="${v}"]`);
+    if (!t || t.hidden) return;
+    t.click();
+    if (s) document.querySelector(`#admin-view .subtabs[data-for="${v}"] [data-sub="${s}"]`)?.click();
+    window.scrollTo(0, 0);
   });
 
   // 필터 조건으로 출퇴근 기록 조회 (1,000건 넘어도 전부)

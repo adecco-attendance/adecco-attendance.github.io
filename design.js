@@ -3,12 +3,13 @@
 (function () {
   // 채운(솔리드) 아이콘
   const ICON = {
+    home: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.3 2.7a1 1 0 0 1 1.4 0l8.5 8a1 1 0 0 1-.7 1.7H19V20a2 2 0 0 1-2 2h-3v-6h-4v6H7a2 2 0 0 1-2-2v-7.6H3.5a1 1 0 0 1-.7-1.7z"/></svg>',
     employee: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 10.4 3.2 1.9a1 1 0 1 1-1 1.7l-3.7-2.2A1 1 0 0 1 11 13V7a1 1 0 1 1 2 0z"/></svg>',
     admin: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1zM4 10v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9zm3 3h4v4H7z"/></svg>',
     hq: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="7.5" r="3.5"/><path d="M2 19.5C2 15.9 5.1 13 9 13s7 2.9 7 6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M17.5 8a1 1 0 0 1 1 1v1.5H20a1 1 0 1 1 0 2h-1.5V14a1 1 0 1 1-2 0v-1.5H15a1 1 0 1 1 0-2h1.5V9a1 1 0 0 1 1-1z"/></svg>',
     notice: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 3.5a1 1 0 0 1 1.6.8v15.4a1 1 0 0 1-1.6.8L13.6 17H11l.9 3.3a1 1 0 0 1-1 1.3H9.3a1 1 0 0 1-1-.8L7.2 17H6a4 4 0 0 1 0-8h7.6z"/><path d="M21 10.5a1.5 1.5 0 0 1 0 3z"/></svg>',
   };
-  const SHORT = { employee: '출퇴근', admin: '근태', hq: '관리', notice: '공지' };  const ORDER = ['employee', 'admin', 'hq', 'notice']; // 공지사항은 맨 아래
+  const SHORT = { home: '홈', employee: '출퇴근', admin: '근태', hq: '관리', notice: '공지' };  const ORDER = ['home', 'employee', 'admin', 'hq', 'notice']; // 공지사항은 맨 아래
   const CHEV = '<svg class="dchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   // 접은 그룹 (이 기기에 기억)
   let collapsed = new Set();
