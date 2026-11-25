@@ -550,3 +550,17 @@ body.ntop #admin-view .subtabs .subtab.feat-job { display: none; }
 #dnav .dsub.on { background: #e8f3ff; color: #3182f6; font-weight: 800; }
 #dnav .dgroup:not(:has(.dsubs)).on > .dtop, #dnav .dgroup.folded.on > .dtop { background: #e8f3ff; color: #3182f6; }
 @media (max-width: 900px) { #nbrand, #ntop { display: none !important; } }
+/* ===== 로그인 화면을 로그인 뒤 디자인에 맞춤 (2026-11-25): 밝은 파랑 버튼·둥근 입력칸, 흰 바탕과 배치는 그대로 ===== */
+.dlogin-brand > b { color: #191f28; }
+.dlogin-ask b { color: #3182f6; }
+#login-form input { border-radius: 12px; border: 1px solid #e5e8eb; }
+#login-form input:focus { border-color: #3182f6; box-shadow: 0 0 0 3px rgba(49,130,246,.15); }
+#login-form .btn.primary { border-radius: 12px; background: #3182f6; border-color: #3182f6; }
+#login-form .btn.primary:hover:not(:disabled) { background: #1b6fe0; border-color: #1b6fe0; }
+#login-form .a2hs-open { border-radius: 12px; }
+@media (max-width: 760px) {
+  #login-form input { border-radius: 12px; }
+  #login-form .btn.primary, #login-form .a2hs-open { border-radius: 14px; }
+  #login-form .a2hs-open { background: #4e5968; border-color: #4e5968; }
+  #login-form .a2hs-open:hover { background: #333d4b; }
+}
