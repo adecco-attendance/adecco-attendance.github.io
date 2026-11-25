@@ -859,7 +859,7 @@
     const we = tmLabel(hrs.end);
     // 출퇴근 화면 안내: 평소 정규 근무시간은 표시하지 않고, 지원 근무·특정일 근무시간처럼 '평소와 다른 날'만 알림
     const sup = b?.support ? `오늘은 ${b.name} 지원 근무입니다${b.support.note ? ` (${b.support.note})` : ''}.` : '';
-    const spc = hrs.special ? `오늘은 특정일 근무시간 ${ws} ~ ${we}입니다${hrs.note ? ` (${hrs.note})` : ''}.` : '';
+    const spc = hrs.special ? `오늘은 단축근무일로 근무시간이 ${ws} ~ ${we}입니다${hrs.note ? ` (${hrs.note})` : ''}.` : '';
     const note = [sup, spc].filter(Boolean).join('\n');
     // 출퇴근 화면 맨 위: 이름 + 오늘 근무 점포 (지원 근무면 '지원' 표시)
     $('me-name').textContent = me?.name ? `${me.name}님` : '';
@@ -871,7 +871,7 @@
     // 샤플형: 인사말 + 오늘 스케줄 카드 (근무 시간 · 점포)
     if ($('dgreet')) $('dgreet').textContent = me?.name ? `${me.name}님, 반가워요!` : '';
     if ($('sched-line')) {
-      $('sched-pill').textContent = b?.support ? '지원 근무' : hrs.special ? '특정일 근무' : '근무';
+      $('sched-pill').textContent = b?.support ? '지원 근무' : hrs.special ? '단축근무일' : '근무';
       $('sched-line').textContent = b?.name ? `근무 ${ws && we ? `${ws}~${we} ` : ''}(${b.name})` : '소속 점포가 없습니다.';
     }
     $('ot-date').value = today;
@@ -899,7 +899,7 @@
     const we = hrs.end;
     const ws = hrs.start;
     if (we && ws && start < kstAt(date, we) && end > kstAt(date, ws)) {
-      return showOtMsg(`${hrs.special ? '이 날은 특정일 근무시간' : '정규 근무시간'}(${tmLabel(ws)} ~ ${tmLabel(we)})과 겹칩니다. 정규 근무시간 밖에서만 신청할 수 있습니다.`, 'err');
+      return showOtMsg(`${hrs.special ? '이 날은 단축근무일 근무시간' : '정규 근무시간'}(${tmLabel(ws)} ~ ${tmLabel(we)})과 겹칩니다. 정규 근무시간 밖에서만 신청할 수 있습니다.`, 'err');
     }
     const btn = e.submitter; btn.disabled = true;
     const { error } = await sb.rpc('request_overtime', {
@@ -1782,7 +1782,7 @@
         const extra = r.clock_out ? unapprovedMsForRow(r, otReqs) : 0;
         const memo = [
           r.home_branch_id && r.home_branch_id !== r.branch_id ? `지원 근무(${branchName(r.home_branch_id)} 소속)` : '',
-          hrs.special ? `특정일 근무시간${hrs.note ? `(${hrs.note})` : ''}` : '', r.note || '',
+          hrs.special ? `단축근무일${hrs.note ? `(${hrs.note})` : ''}` : '', r.note || '',
         ].filter(Boolean).join(' / ');
         detail.push([p.name, r.branch?.name || branchName(r.branch_id), ...(JG ? [jobName(recJob(r))] : []), d, wdOf(d), tmLabel(hrs.start), tmLabel(hrs.end),
           hm(r.clock_in), r.clock_out ? hm(r.clock_out) : '미퇴근',
@@ -2944,7 +2944,7 @@
     let [lat, lng] = nums;
     if (lat >= 124 && lat <= 132 && lng >= 33 && lng <= 39) [lat, lng] = [lng, lat]; // 순서 바뀜 보정
     if (!(lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132)) {
-      throw new Error('한국 범위의 좌표가 아닙니다. 구글 지도에서 복사한 값인지 확인하세요.');
+      throw new Error('한국 범위의 좌표가 아닙니다. [주소로 찾기]나 [지도에서 선택]으로 다시 지정하세요.');
     }
     return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
   }
@@ -2963,7 +2963,7 @@
   let shBranch = null;
   function openSpecialDialog(b) {
     shBranch = b;
-    $('sh-title').textContent = `특정일 근무시간 - ${b.name}`;
+    $('sh-title').textContent = `단축근무일 - ${b.name}`;
     $('sh-usual').textContent = `평소 근무시간 ${tmLabel(b.work_start) || '09:00'} ~ ${tmLabel(b.work_end) || '18:00'}`;
     $('sh-date').value = ymd(new Date());
     $('sh-start').value = '14:00';
@@ -2995,7 +2995,7 @@
   });
   async function deleteSpecial(id) {
     const h = [...specialHours.values()].find((x) => x.id === id);
-    if (!h || !confirm(`${branchName(h.branch_id)} ${dateLabel(h.work_date)}의 특정일 근무시간(${tmLabel(h.work_start)}~${tmLabel(h.work_end)})을 삭제할까요?\n삭제하면 그날은 평소 근무시간으로 계산됩니다.`)) return;
+    if (!h || !confirm(`${branchName(h.branch_id)} ${dateLabel(h.work_date)}의 단축근무일(${tmLabel(h.work_start)}~${tmLabel(h.work_end)})을 삭제할까요?\n삭제하면 그날은 평소 근무시간으로 계산됩니다.`)) return;
     const { error } = await sb.from('branch_special_hours').delete().eq('id', id);
     if (error) return alert(errMsg(error));
     await loadSpecialHours();
@@ -3012,7 +3012,7 @@
         <td class="hours-cell">
           <input type="time" class="time-input" value="${tmLabel(b.work_start) || '09:00'}" data-field="work_start"> ~
           <input type="time" class="time-input" value="${tmLabel(b.work_end) || '18:00'}" data-field="work_end">
-          <div class="sh-chips">${specialChips(b.id)}<button type="button" class="btn small sh-add" data-sh-add>+ 특정일</button></div>
+          <div class="sh-chips">${specialChips(b.id)}<button type="button" class="btn small sh-add" data-sh-add>+ 단축근무일</button></div>
         </td>
         <td class="loc-cell">
           <div class="addr-row">
