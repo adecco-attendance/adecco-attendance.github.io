@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="style.css">
   <!-- 화면 디자인 (2026-11-23, 시안 D): 글꼴 Pretendard + 사이드바 레이아웃. 되돌리려면 아래 두 줄과 design.js 줄을 지우면 됨 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="design.css?v=20261125">
+  <link rel="stylesheet" href="design.css?v=20261125b">
 </head>
 <body>
   <div id="config-warning" class="banner" hidden>
@@ -179,6 +179,13 @@
           </div>
           <p class="muted small" style="margin:6px 0 0">퇴근 시간이 비어 있으면 그날 근무시간이 0으로 계산됩니다. 직원에게 확인한 뒤 [퇴근 입력]으로 채워 주세요.</p>
         </details>
+        <div id="today-kpi" class="kpi-row">
+          <div class="kpi main"><span>출근</span><b id="kpi-in">0</b></div>
+          <div class="kpi"><span>근무 중</span><b id="kpi-working" class="c-work">0</b></div>
+          <div class="kpi"><span>퇴근</span><b id="kpi-out">0</b></div>
+          <button type="button" class="kpi warn" id="kpi-miss-btn"><span>퇴근 미기록</span><b id="kpi-miss">0</b></button>
+        </div>
+        <div id="today-cards" class="scards"></div>
         <div class="table-wrap today-wrap">
           <table>
             <thead><tr><th>점포</th><th>출근</th><th>근무 중</th><th>퇴근</th></tr></thead>
@@ -641,7 +648,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="config.js"></script>
-  <script src="app.js"></script>
-  <script src="design.js?v=20261125"></script>
+  <script src="app.js?v=20261125b"></script>
+  <script src="design.js?v=20261125b"></script>
 </body>
 </html>

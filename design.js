@@ -119,6 +119,25 @@
       form.insertBefore(t, form.firstChild);
     }
   }
-  const init = () => { setup(); setupLogin(); };
+  // 샤플형 (2026-11-25): 출퇴근 카드의 날짜·시계·출퇴근 칸·버튼을 파란 카드로 묶음 (요소·id는 옮기기만 함),
+  // 점포별 출근 현황의 숫자 카드를 맨 위로, '퇴근 미기록' 숫자 카드를 누르면 아래 목록을 펼침
+  function setupShopl() {
+    const cc = document.querySelector('.clock-card');
+    if (cc && !cc.querySelector('.sclock')) {
+      const box = document.createElement('div'); box.className = 'sclock';
+      ['now-date', 'now-time', 'status-row', 'status-badge', 'clock-buttons'].forEach((k) => {
+        const el = document.getElementById(k) || cc.querySelector('.' + k);
+        if (el) box.appendChild(el);
+      });
+      cc.insertBefore(box, cc.querySelector('#gps-box'));
+    }
+    const kpi = document.getElementById('today-kpi'); const mo = document.getElementById('missout-box');
+    if (kpi && mo) mo.parentNode.insertBefore(kpi, mo);
+    document.getElementById('kpi-miss-btn')?.addEventListener('click', () => {
+      const d = document.getElementById('missout-box'); if (!d || d.hidden) return;
+      d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  const init = () => { setup(); setupLogin(); setupShopl(); };
   if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
 })();

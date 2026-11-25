@@ -226,32 +226,262 @@ body:has(#app-view[hidden]) #dnav, body:has(#app-view[hidden]) #dbottom, body:ha
 /* PC 로그인 화면에서는 '홈 화면에 바로가기 추가' 숨김 (휴대폰에서만 보임) */
 @media (min-width: 761px) { #login-form .a2hs-open { display: none; } }
 
-/* ---- 본문을 사이드바 남색 톤과 맞춤 (2026-11-25): 색·모양만 변경, 기능·문구는 그대로 ---- */
-:root { --nav2: #24427d; --navtint: #eef2f9; --navline: #d9e1ef; }
-/* 위쪽 머리줄: 사이드바와 이어지는 남색 밑줄 */
-body.dlayout .topbar { border-bottom: 1px solid var(--navline); box-shadow: inset 0 -2px 0 var(--nav); }
-#dcrumb b { color: var(--nav); }
-#dcrumb .dc-group { color: #7a88a6; }
-/* 카드: 남색 윗선 + 남색 제목 */
-body.dlayout #app-view .card { border: 1px solid var(--navline); border-top: 3px solid var(--nav); border-radius: 6px; }
-body.dlayout #app-view .card-head h2, body.dlayout .clock-card .dtoday { color: var(--nav); }
-/* 필터 줄: 옅은 남색 바탕 판 위에, 입력칸·선택칸·버튼 높이를 38px로 통일 */
-body.dlayout #app-view form.filters, body.dlayout #app-view div.filters { background: var(--navtint); border: 1px solid var(--navline); border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; align-items: flex-end; }
-body.dlayout #app-view .filters > label { color: #51607f; font-weight: 600; font-size: 12px; }
-body.dlayout #app-view .filters input, body.dlayout #app-view .filters select, body.dlayout #app-view .filters .btn { height: 38px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
-body.dlayout #app-view .filters input, body.dlayout #app-view .filters select { border-color: #cfd8e8; background-color: #fff; }
-/* 표 머리줄: 옅은 남색 바탕 + 남색 글씨 */
-body.dlayout #app-view th { background: var(--navtint); color: var(--nav); border-top: 1px solid var(--navline); border-bottom: 1px solid var(--navline); }
-body.dlayout #app-view td { border-bottom-color: #e8edf5; }
-body.dlayout #app-view tbody tr:hover td { background: #f6f8fc; }
-tr.day-head td { background: #f3f6fb !important; color: var(--nav); }
-tr.total td, tr.total.top td { background: #e9eff9 !important; color: var(--nav) !important; }
-/* 버튼: 주 버튼은 사이드바와 같은 남색, 보조(엑셀·새로고침)는 남색 테두리 */
-body.dlayout #app-view .btn.primary { background: var(--nav); border-color: var(--nav); }
-body.dlayout #app-view .btn.primary:hover:not(:disabled) { background: var(--nav2); border-color: var(--nav2); }
-body.dlayout #app-view #summary-csv-btn, body.dlayout #app-view #csv-btn, body.dlayout #app-view #ot-csv-btn, body.dlayout #app-view #today-refresh { color: var(--nav); border-color: var(--nav); background: #fff; }
-body.dlayout #app-view #summary-csv-btn:hover, body.dlayout #app-view #csv-btn:hover, body.dlayout #app-view #ot-csv-btn:hover, body.dlayout #app-view #today-refresh:hover { background: var(--navtint); }
-/* 표 안의 승인 버튼도 남색 테두리 */
-#ot-list .btn.primary, td .btn.primary { background: #fff !important; color: var(--nav) !important; border: 1px solid var(--nav) !important; }
-/* 작은 정보 문구 */
-body.dlayout #app-view .card > p.muted { color: #6b7894; }
+/* ---- 샤플 톤 미리보기 (2026-11-25): 색·모양만, 기능·문구는 그대로 ----
+   옅은 회색 바탕 + 흰 둥근 카드(테두리 없이 옅은 그림자) + 밝은 파랑 강조 + 흰 사이드바 */
+:root {
+  --sb: #3182f6; --sb-hover: #1b6fe0; --sbtint: #eaf3ff; --sbbg: #f3f5f8; --sbline: #edf0f4;
+  --sbtext: #191f28; --sbsub: #6b7684; --primary: var(--sb); --primary-hover: var(--sb-hover);
+}
+body.dlayout { background: var(--sbbg); }
+body.dlayout #app-view { background: var(--sbbg); }
+
+/* 사이드바: 흰 바탕 + 파란 선택 표시 */
+#dnav { background: #fff; color: var(--sbsub); border-right: 1px solid var(--sbline); }
+#dnav .dhead { border-bottom-color: var(--sbline); }
+#dnav .dhead b { color: var(--sbtext); }
+#dnav .dlogo { box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+#dnav .dclose { color: var(--sbsub); }
+#dnav .dtop { color: var(--sbtext); }
+#dnav .dtop svg { color: #b0b8c1; }
+#dnav .dtop .dchev { color: #b0b8c1; }
+#dnav .dtop:hover, #dnav .dsub:hover { background: #f2f4f6; color: var(--sbtext); }
+#dnav .dgroup.on > .dtop { color: var(--sbtext); }
+#dnav .dgroup.on > .dtop svg { color: var(--sb); }
+#dnav .dsub { color: var(--sbsub); }
+#dnav .dsub.on { background: var(--sbtint); color: var(--sb); }
+#dnav .dsub.on::before { background: var(--sb); }
+#dnav .dgroup:not(:has(.dsubs)).on > .dtop, #dnav .dgroup.folded.on > .dtop { background: var(--sbtint); color: var(--sb); }
+#dnav .dbadge { background: #f04452; }
+
+/* 위쪽 머리줄 */
+body.dlayout .topbar { background: #fff; border-bottom: 1px solid var(--sbline); box-shadow: none; }
+#dcrumb b { color: var(--sbtext); font-size: 17px; }
+#dcrumb .dc-group { color: #8b95a1; }
+
+/* 카드: 흰 바탕, 큰 둥근 모서리, 테두리 없이 옅은 그림자 */
+body.dlayout #app-view .card { border: 0; border-top: 0; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,27,55,.06); }
+body.dlayout #app-view .card-head h2, body.dlayout .clock-card .dtoday { color: var(--sbtext); font-weight: 800; }
+body.dlayout #app-view .card > p.muted { color: var(--sbsub); }
+
+/* 조회 칸: 옅은 회색 판, 둥근 입력칸 */
+body.dlayout #app-view form.filters, body.dlayout #app-view div.filters { background: #f9fafb; border: 0; border-radius: 12px; }
+body.dlayout #app-view .filters > label { color: var(--sbsub); }
+body.dlayout #app-view .filters input, body.dlayout #app-view .filters select { border-color: #e5e8eb; border-radius: 10px; }
+body.dlayout #app-view .filters .btn { border-radius: 10px; }
+body.dlayout #app-view input:focus, body.dlayout #app-view select:focus { border-color: var(--sb); box-shadow: 0 0 0 3px rgba(49,130,246,.15); outline: none; }
+
+/* 표: 선 없는 머리줄, 옅은 구분선 */
+body.dlayout #app-view th { background: #f9fafb; color: var(--sbsub); border-top: 0; border-bottom: 1px solid var(--sbline); font-weight: 600; }
+body.dlayout #app-view td { border-bottom-color: #f2f4f6; color: var(--sbtext); }
+body.dlayout #app-view tbody tr:hover td { background: #f9fbff; }
+tr.day-head td { background: #f9fafb !important; color: var(--sbtext); }
+tr.total td, tr.total.top td { background: var(--sbtint) !important; color: var(--sb) !important; }
+
+/* 버튼: 주 버튼은 밝은 파랑, 보조 버튼은 옅은 파랑 바탕 */
+body.dlayout #app-view .btn { border-radius: 10px; }
+body.dlayout #app-view .btn.primary { background: var(--sb); border-color: var(--sb); }
+body.dlayout #app-view .btn.primary:hover:not(:disabled) { background: var(--sb-hover); border-color: var(--sb-hover); }
+body.dlayout #app-view #summary-csv-btn, body.dlayout #app-view #csv-btn, body.dlayout #app-view #ot-csv-btn, body.dlayout #app-view #today-refresh { color: var(--sb); border-color: transparent; background: var(--sbtint); font-weight: 700; }
+body.dlayout #app-view #summary-csv-btn:hover, body.dlayout #app-view #csv-btn:hover, body.dlayout #app-view #ot-csv-btn:hover, body.dlayout #app-view #today-refresh:hover { background: #d6e8ff; }
+#ot-list .btn.primary, td .btn.primary { background: var(--sbtint) !important; color: var(--sb) !important; border: 0 !important; }
+
+/* 출퇴근 카드 */
+.clock-card .status-row > div { background: #f9fafb; border-radius: 12px; }
+.clock-card .badge { background: var(--sbtint); color: var(--sb); border-radius: 6px; }
+
+/* 휴대폰 아래 탭바: 흰 바탕 + 파란 선택 */
+@media (max-width: 900px) {
+  #dbottom { background: #fff; border-top: 1px solid var(--sbline); box-shadow: 0 -2px 10px rgba(0,0,0,.04); }
+  #dbottom button { color: #b0b8c1; }
+  #dbottom button.on { color: var(--sb); }
+  #dbottom button.on::after { background: var(--sb); }
+  body.dlayout #app-view .card { border-radius: 14px; }
+}
+
+/* ===== 샤플형 디자인 요소 ===== */
+/* 페이지 제목 크게 */
+body.dlayout #app-view .card-head h2 { font-size: 22px; letter-spacing: -0.03em; }
+/* 상태 배지: 꽉 찬 색 대신 옅은 바탕 + 진한 글씨 (샤플 '오전조' 태그 모양) */
+.st { border-radius: 6px !important; font-weight: 700; }
+.st-pending { background: #fff4e0 !important; color: #e08a00 !important; }
+.st-approved { background: #e3f8ef !important; color: #00a86b !important; }
+.st-rejected { background: #ffe9eb !important; color: #e5303f !important; }
+.st-cancelled { background: #f2f4f6 !important; color: #8b95a1 !important; }
+
+/* 오늘 현황: 위쪽 숫자 카드 */
+.kpi-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; margin: 4px 0 18px; }
+.kpi { background: #f9fafb; border: 0; border-radius: 16px; padding: 18px 20px; display: grid; gap: 6px; text-align: left; font: inherit; }
+.kpi span { font-size: 14px; font-weight: 700; color: #4e5968; }
+.kpi b { font-size: 32px; font-weight: 800; color: #191f28; letter-spacing: -0.02em; line-height: 1.1; }
+.kpi.main { background: linear-gradient(135deg, #4593fc, #2272eb); box-shadow: 0 6px 16px rgba(49,130,246,.25); }
+.kpi.main span, .kpi.main b { color: #fff; }
+.kpi .c-work { color: #3182f6; }
+.kpi.warn { background: #fff4e0; cursor: pointer; }
+.kpi.warn span { color: #b86e00; }
+.kpi.warn b { color: #e08a00; }
+.kpi.warn:hover { background: #ffecc7; }
+#today-kpi ~ #missout-box { margin-top: 0; }
+
+/* 점포 카드 (표 대신) */
+body.dlayout #sub-today .today-wrap { display: none; }
+.scards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.scard { background: #fff; border: 1px solid #eef1f4; border-radius: 16px; padding: 16px 16px 10px; box-shadow: 0 2px 8px rgba(0,27,55,.04); }
+.scard.zero { opacity: .55; }
+.scard-h { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; color: #191f28; margin-bottom: 8px; }
+.scard-ic { width: 26px; height: 26px; border-radius: 8px; background: #f2f4f6 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238b95a1'%3E%3Cpath d='M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4h2a2 2 0 0 1 2 2v10h-6v-4h-4v4zm4-14v2h2V7zm4 0v2h2V7zm-4 4v2h2v-2zm4 0v2h2v-2z'/%3E%3C/svg%3E") center/16px no-repeat; flex: none; }
+.scard-r { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 14px; color: #4e5968; border-top: 1px solid #f2f4f6; }
+.scard-r b { margin-left: auto; font-size: 16px; color: #191f28; }
+.scard-r b.c-work { color: #3182f6; }
+.pdot { width: 22px; height: 22px; border-radius: 50%; flex: none; background-position: center; background-repeat: no-repeat; background-size: 13px; }
+.pdot.p-in { background-color: #e8f3ff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233182f6'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 20c0-4 3.6-6 8-6s8 2 8 6z'/%3E%3C/svg%3E"); }
+.pdot.p-work { background-color: #e3f8ef; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300a86b'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 20c0-4 3.6-6 8-6s8 2 8 6z'/%3E%3C/svg%3E"); }
+.pdot.p-out { background-color: #f2f4f6; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238b95a1'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 20c0-4 3.6-6 8-6s8 2 8 6z'/%3E%3C/svg%3E"); }
+
+/* 출근자 명단: 근무 중 / 퇴근 두 칸 + 직원 카드 */
+.kanban { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
+.kcol { background: #f9fafb; border-radius: 16px; padding: 12px; display: grid; gap: 8px; align-content: start; max-height: 520px; overflow-y: auto; }
+.khead { display: flex; align-items: center; gap: 8px; padding: 2px 4px 4px; }
+.khead b { color: #4e5968; font-size: 14px; }
+.kpill { font-size: 13px; font-weight: 700; border-radius: 8px; padding: 4px 10px; }
+.kpill.k-work { background: #e8f3ff; color: #3182f6; }
+.kpill.k-out { background: #e5e8eb; color: #6b7684; }
+.pcard { background: #fff; border-radius: 14px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 1px 4px rgba(0,27,55,.05); }
+.pcard.done { opacity: .75; }
+.pav { width: 36px; height: 36px; border-radius: 50%; color: #fff; font-weight: 800; font-size: 15px; display: grid; place-items: center; flex: none; }
+.pinfo { display: grid; min-width: 0; }
+.pinfo b { font-size: 14.5px; color: #191f28; }
+.pinfo span { font-size: 12.5px; color: #8b95a1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ptime { margin-left: auto; font-size: 13px; font-weight: 700; color: #4e5968; padding-left: 10px; border-left: 2px solid #e5e8eb; white-space: nowrap; }
+
+/* 출·퇴근 카드: 날짜·시계·버튼을 파란 카드로 */
+.clock-card .sclock { background: linear-gradient(135deg, #4593fc, #1b6fe8); border-radius: 18px; padding: 20px; display: grid; gap: 12px; color: #fff; box-shadow: 0 8px 20px rgba(49,130,246,.25); }
+.clock-card .sclock .now-date { border-left: 0; padding-left: 0; color: rgba(255,255,255,.9); }
+.clock-card .sclock .now-time { color: #fff; font-size: 38px; }
+.clock-card .sclock .status-row > div { background: rgba(255,255,255,.16); border-radius: 12px; }
+.clock-card .sclock .status-row .muted { color: rgba(255,255,255,.8); }
+.clock-card .sclock .status-row strong { color: #fff; }
+.clock-card .sclock .badge { background: rgba(255,255,255,.22); color: #fff; }
+.clock-card .sclock .badge.working { background: #fff; color: #00a86b; }
+.clock-card .sclock #clock-in-btn { background: #fff !important; color: #3182f6 !important; border: 0 !important; }
+.clock-card .sclock #clock-in-btn:disabled { background: #fff; color: #3182f6; opacity: .6; }
+.clock-card .sclock #clock-out-btn { background: transparent; color: #fff; border: 1.5px solid rgba(255,255,255,.7); }
+.clock-card .sclock #clock-out-btn:disabled { color: rgba(255,255,255,.55); border-color: rgba(255,255,255,.35); }
+.clock-card .sclock .btn.big { border-radius: 12px; }
+
+@media (max-width: 900px) {
+  .kpi-row { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi { padding: 14px 16px; }
+  .kpi b { font-size: 26px; }
+  .scards { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .scard { padding: 12px 12px 6px; }
+  .kanban { grid-template-columns: 1fr; }
+}
+@media (max-width: 340px) { .scards { grid-template-columns: 1fr; } }
+
+/* ===== 다른 화면도 같은 모양으로 (개인별·일자별·초과근무·관리자 메뉴) ===== */
+.kpi-row.auto { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 0 0 18px; }
+.kpi-row.auto .kpi b { font-size: clamp(17px, 1.6vw, 24px); white-space: nowrap; }
+.kpi-row.auto .kpi.main b { font-size: clamp(18px, 1.8vw, 26px); }
+.kpi-row[hidden] { display: none; }
+/* 합계 줄은 위쪽 숫자 카드로 대신 */
+#staff-summary tr.total.top { display: none !important; }
+/* 이름 앞 동그라미 */
+.nm { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: #191f28; white-space: nowrap; }
+.av { width: 28px; height: 28px; border-radius: 50%; color: #fff; font-weight: 800; font-size: 12.5px; display: inline-grid; place-items: center; flex: none; }
+/* 일자별 날짜 줄: 둥근 띠 */
+body.dlayout #app-view tr.day-head td { background: #f2f6fd !important; color: #191f28; font-weight: 800; border-bottom: 0; border-top: 6px solid #fff; border-radius: 0; padding-top: 12px; padding-bottom: 12px; }
+tr.day-head .day-meta { color: #6b7684; font-weight: 500; }
+tr.day-head .day-caret { color: #3182f6; }
+/* 작은 태그들(미퇴근·미승인·지원)도 옅은 바탕 */
+.tag-open { background: #fff4e0 !important; color: #e08a00 !important; border: 0 !important; border-radius: 6px !important; font-weight: 700; }
+.tag-warn { color: #e08a00 !important; }
+.tag-support { background: #f3eeff !important; color: #7c4ddb !important; border: 0 !important; border-radius: 6px !important; }
+/* 표 안 작은 버튼 */
+body.dlayout #app-view td .btn.small { border-radius: 8px; border-color: #e5e8eb; background: #fff; color: #4e5968; }
+body.dlayout #app-view td .btn.small:hover { background: #f2f4f6; }
+body.dlayout #app-view td .btn.danger-outline { color: #e5303f; border-color: #ffd5d9; background: #fff; }
+/* 사용 중/비활성 표시 */
+.status-on { background: #e3f8ef; color: #00a86b; border-radius: 6px; padding: 2px 8px; font-weight: 700; font-size: 12.5px; }
+.status-off { background: #f2f4f6; color: #8b95a1; border-radius: 6px; padding: 2px 8px; font-weight: 700; font-size: 12.5px; }
+/* 표 안 입력칸 (직원 목록·점포 관리) */
+body.dlayout #app-view td input[type="text"], body.dlayout #app-view td input[type="date"], body.dlayout #app-view td input[type="time"], body.dlayout #app-view td input[type="number"], body.dlayout #app-view td select { border-color: #e5e8eb; border-radius: 8px; }
+@media (max-width: 900px) {
+  .kpi-row.auto, .kpi-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  .kpi { min-width: 0; }
+  .kpi-row.auto .kpi b, .kpi-row.auto .kpi.main b { font-size: 17px; white-space: normal; }
+}
+
+/* ===== 점포 관리: 왼쪽 점포 목록 + 오른쪽 상세 (샤플 매장 화면형) ===== */
+#bmaster { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
+.blist { display: grid; gap: 6px; max-height: 760px; overflow-y: auto; padding: 2px; }
+.bitem { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; background: #fff; border: 1px solid #eef1f4; border-radius: 14px; padding: 11px 12px; cursor: pointer; }
+.bitem:hover { background: #f9fafb; }
+.bitem.on { border-color: #3182f6; background: #f3f8ff; box-shadow: 0 0 0 2px rgba(49,130,246,.15); }
+.bitem.off { opacity: .55; }
+.bic { width: 32px; height: 32px; border-radius: 10px; flex: none; background: #f2f4f6 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23505a66'%3E%3Cpath d='M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4h2a2 2 0 0 1 2 2v10h-6v-4h-4v4zm4-14v2h2V7zm4 0v2h2V7zm-4 4v2h2v-2zm4 0v2h2v-2z'/%3E%3C/svg%3E") center/18px no-repeat; }
+.bitem.on .bic { background-color: #fff; }
+.bic.big { width: 44px; height: 44px; border-radius: 12px; background-size: 24px; background-color: #fff; box-shadow: 0 1px 4px rgba(0,27,55,.08); }
+.bnm { display: grid; min-width: 0; flex: 1; }
+.bnm b { font-size: 14.5px; color: #191f28; }
+.bnm small { font-size: 12px; color: #8b95a1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bmeta { display: grid; justify-items: end; gap: 3px; flex: none; }
+.bmeta i { font-style: normal; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 6px; }
+.bmeta i.g-on { background: #e8f3ff; color: #3182f6; }
+.bmeta i.g-off { background: #fff4e0; color: #e08a00; }
+.bmeta em { font-style: normal; font-size: 12px; color: #6b7684; }
+
+.bdetail { background: #f9fafb; border-radius: 18px; padding: 18px; }
+.bdhead { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.bdhead b { font-size: 21px; font-weight: 800; color: #191f28; letter-spacing: -0.03em; }
+.bdgrid { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 14px; align-items: start; }
+.bdmain { display: grid; gap: 14px; min-width: 0; }
+.bsec { background: #fff; border-radius: 16px; padding: 16px 18px; box-shadow: 0 2px 8px rgba(0,27,55,.04); }
+.bsec h3 { margin: 0 0 10px; font-size: 16px; font-weight: 800; color: #191f28; }
+#btoday .scard-r:first-of-type { border-top: 0; }
+
+/* 선택한 점포 줄을 세로 입력 양식으로 */
+#bsec-info .table-wrap { overflow: visible; margin: 0; }
+#bsec-info table { width: 100%; }
+#bsec-info thead { display: none; }
+#branch-list tr { display: none; }
+#branch-list tr.sel, #branch-list tr:not([data-id]) { display: block; }
+#branch-list tr.sel td { display: block; border: 0; padding: 10px 0; border-bottom: 1px solid #f2f4f6; background: transparent !important; }
+#branch-list tr.sel td:last-child { border-bottom: 0; }
+#branch-list tr.sel td::before { content: attr(data-label); display: block; font-size: 13px; font-weight: 700; color: #6b7684; margin-bottom: 6px; }
+#branch-list tr.sel td.actions::before { content: none; }
+#branch-list tr.sel td.actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 14px; }
+#branch-list tr.sel td.actions [data-bsave] { background: #3182f6; color: #fff; border-color: #3182f6; padding: 0 18px; }
+#branch-list tr.sel input[data-field="name"], #branch-list tr.sel .addr-input, #branch-list tr.sel .coord-input { width: 100%; max-width: 460px; box-sizing: border-box; }
+#branch-list tr.sel .addr-row { display: flex; gap: 8px; max-width: 560px; }
+#branch-list tr.sel .addr-row .addr-input { flex: 1; }
+#branch-list tr.sel .coord-input { margin-top: 6px; }
+
+/* 위치 지도 */
+.bmini { position: relative; height: 200px; border-radius: 14px; overflow: hidden; background: #eef2f7; }
+.bmini-map { position: absolute; inset: 0; }
+.bmini.empty { display: grid; place-items: center; color: #e08a00; font-weight: 700; font-size: 13.5px; background: #fff8ec; }
+.bmini-exp { position: absolute; right: 10px; top: 10px; z-index: 500; width: 38px; height: 38px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.15); display: grid; place-items: center; cursor: pointer; color: #333d4b; }
+.bmini-exp svg { width: 18px; height: 18px; }
+.bcoord { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+.bcoord:empty { display: none; }
+.bcoord span { display: block; font-size: 12.5px; color: #8b95a1; }
+.bcoord b { font-size: 15px; color: #191f28; font-weight: 600; }
+
+@media (max-width: 1200px) { .bdgrid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) {
+  #bmaster { grid-template-columns: 1fr; }
+  .blist { max-height: 300px; }
+  .bdetail { padding: 12px; }
+}
+
+#branch-list tr.sel .time-input { width: 140px; }
+#branch-list tr.sel .hours-cell { white-space: nowrap; }
+#bmaster > *, .bdgrid > *, .bsec { min-width: 0; }
+@media (max-width: 900px) {
+  #branch-list tr.sel td { display: block !important; text-align: left !important; }
+  #branch-list tr.sel td::before { width: auto !important; float: none !important; }
+  #branch-list tr.sel td.actions { display: flex !important; }
+  #branch-list tr.sel .hours-cell { white-space: normal; }
+  #branch-list tr.sel .time-input { width: 120px; }
+  .bsec { padding: 14px; }
+}

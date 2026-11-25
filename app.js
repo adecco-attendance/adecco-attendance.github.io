@@ -129,6 +129,28 @@
     rejected: ['반려', 'st-rejected'], cancelled: ['취소', 'st-cancelled'],
   };
   const otStatusTag = (s) => `<span class="st ${OT_STATUS[s]?.[1] || ''}">${OT_STATUS[s]?.[0] || s}</span>`;
+  // 샤플형 화면: 표 위 숫자 카드 + 이름 앞 동그라미 (2026-11-25 샤플형 디자인)
+  const SHOPL = true;
+  const AVC = ['#3182f6', '#f04452', '#00b386', '#ff9f1a', '#8b5cf6', '#14b8c4'];
+  const avName = (n) => {
+    n = n || '';
+    if (!SHOPL) return esc(n);
+    const c = AVC[[...(n || '?')].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVC.length];
+    return `<span class="nm"><span class="av" style="background:${c}">${esc(n.slice(0, 1))}</span>${esc(n)}</span>`;
+  };
+  function kpiFill(tbodyId, items) {
+    if (!SHOPL) return;
+    const wrap = document.getElementById(tbodyId)?.closest('.table-wrap');
+    if (!wrap) return;
+    let box = document.getElementById(`kpi-${tbodyId}`);
+    if (!box) {
+      box = document.createElement('div'); box.id = `kpi-${tbodyId}`; box.className = 'kpi-row auto';
+      const f = wrap.closest('.card')?.querySelector(':scope > form.filters, :scope > div.filters');
+      if (f) f.after(box); else wrap.before(box);
+    }
+    box.hidden = !items;
+    if (items) box.innerHTML = items.map(([l, v, c]) => `<div class="kpi ${c || ''}"><span>${l}</span><b>${v}</b></div>`).join('');
+  }
   const otTimeLabel = (q) => {
     const nextDay = ymd(q.end_at) !== ymd(q.start_at) ? '(익일)' : '';
     return `${hm(q.start_at)}~${nextDay}${hm(q.end_at)}`;
@@ -1053,11 +1075,12 @@
     if (!$('sp-start').value) { $('sp-start').value = today; $('sp-end').value = today; }
     const since = shiftDate(today, -7);
     const rows = supports.filter((s) => s.end_date >= since);
+    kpiFill('sp-list', [['진행 중', `${rows.filter((s) => s.start_date <= today && s.end_date >= today).length}건`, 'main'], ['예정', `${rows.filter((s) => s.start_date > today).length}건`], ['종료', `${rows.filter((s) => s.end_date < today).length}건`]]);
     $('sp-list').innerHTML = rows.map((s) => {
       const st = s.end_date < today ? '<span class="st st-cancelled">종료</span>' : s.start_date <= today ? '<span class="st st-approved">진행 중</span>' : '<span class="st st-pending">예정</span>';
       return `<tr data-id="${s.id}" class="${s.end_date < today ? 'zero' : ''}">
         <td>${supportLabel(s)}</td>
-        <td>${esc(s.person?.name || '')}</td>
+        <td>${avName(s.person?.name)}</td>
         <td>${esc(s.from_branch?.name || '미지정')} → <b>${esc(s.to_branch?.name || '')}</b></td>
         <td class="note">${esc(s.note || '')}</td>
         <td>${st}</td>
@@ -1323,20 +1346,45 @@
     if (isRegion()) groups = groups.filter((g) => myScope.has(g.id));      // 권역 매니저는 담당 점포만
     const total = { in: 0, working: 0, out: 0 };
     const present = []; // [{ name, recs }]
+    const stats = []; // 점포 카드용
     const rows = groups.map((g) => {
       const recs = data.filter((r) => (r.branch_id ?? null) === g.id); // 기록된(근무한) 점포 기준
       const c = { in: recs.length, working: recs.filter((r) => !r.clock_out).length, out: recs.filter((r) => r.clock_out).length };
       if (!c.in && !g.active) return ''; // 안 쓰는 점포·점포 미지정은 기록이 있을 때만
       Object.keys(total).forEach((k) => { total[k] += c[k]; });
       if (recs.length) present.push({ name: g.name, recs });
+      stats.push({ g, c });
       return `<tr class="${c.in ? '' : 'zero'}"><td>${esc(g.name)}</td><td class="num">${c.in}</td><td class="num">${c.working}</td><td class="num">${c.out}</td></tr>`;
     }).join('');
     tbody.innerHTML = rows
       ? rows + `<tr class="total"><td>합계</td><td class="num">${total.in}</td><td class="num">${total.working}</td><td class="num">${total.out}</td></tr>`
       : `<tr><td colspan="4" class="empty">${isHQ() ? '등록된 점포가 없습니다. 관리자 메뉴 → 점포 관리에서 추가하세요.' : isRegion() ? '담당 점포가 없습니다. 총괄 매니저에게 담당 점포 지정을 요청하세요.' : '담당 점포가 없습니다.'}</td></tr>`;
+    // 샤플형: 위쪽 숫자 카드 + 점포 카드
+    if ($('today-kpi')) {
+      todayByBranch = new Map(stats.map(({ g, c }) => [g.id, c]));
+      if ($('bmaster')) branchMaster();
+      $('kpi-in').textContent = total.in; $('kpi-working').textContent = total.working; $('kpi-out').textContent = total.out;
+      $('today-cards').innerHTML = stats.length ? stats.map(({ g, c }) => `<div class="scard${c.in ? '' : ' zero'}">
+          <div class="scard-h"><span class="scard-ic"></span>${esc(g.name)}</div>
+          <div class="scard-r"><i class="pdot p-in"></i>출근<b>${c.in}</b></div>
+          <div class="scard-r"><i class="pdot p-work"></i>근무 중<b class="c-work">${c.working}</b></div>
+          <div class="scard-r"><i class="pdot p-out"></i>퇴근<b>${c.out}</b></div>
+        </div>`).join('') : `<p class="empty">${tbody.textContent}</p>`;
+    }
     // 출근자 명단 접기란: 펼침 상태는 새로고침해도 유지 (details 요소는 그대로 두고 내용만 바꿈)
     $('present-box').hidden = !total.in; // 출근 기록이 없으면 명단 접기란도 숨김
     $('present-head').innerHTML = `출근자 명단 <b>${total.in}명</b> <span class="muted">· 근무 중 ${total.working} · 퇴근 ${total.out}</span>`;
+    const AV = ['#3182f6', '#f04452', '#00b386', '#ff9f1a', '#8b5cf6', '#14b8c4'];
+    const avColor = (n) => AV[[...n].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AV.length];
+    const pcard = (r, bname) => { const n = r.profile?.name || ''; const sup = supportOn(r.user_id, today) ? '(지원)' : '';
+      return `<div class="pcard${r.clock_out ? ' done' : ''}"><span class="pav" style="background:${avColor(n || '?')}">${esc(n.slice(0, 1))}</span>
+        <div class="pinfo"><b>${esc(n)}${sup}</b><span>${esc(bname)}</span></div>
+        <span class="ptime">${hm(r.clock_in)}~${r.clock_out ? hm(r.clock_out) : ''}</span></div>`; };
+    const allRecs = present.flatMap((g) => g.recs.map((r) => [r, g.name]));
+    if ($('today-kpi')) { $('present-list').innerHTML = `<div class="kanban">
+        <div class="kcol"><div class="khead"><span class="kpill k-work">근무 중</span><b>${total.working}</b></div>${allRecs.filter(([r]) => !r.clock_out).map(([r, b]) => pcard(r, b)).join('')}</div>
+        <div class="kcol"><div class="khead"><span class="kpill k-out">퇴근</span><b>${total.out}</b></div>${allRecs.filter(([r]) => r.clock_out).map(([r, b]) => pcard(r, b)).join('')}</div>
+      </div>`; return; }
     $('present-list').innerHTML = present.map((g) => `<div class="fold-group">
         <div class="fold-branch">${esc(g.name)} <span class="muted">${g.recs.length}명</span></div>
         <div class="fold-names">${g.recs.map((r) => {
@@ -1357,6 +1405,7 @@
       .is('clock_out', null).gte('work_date', from).lt('work_date', today).order('work_date', { ascending: false }).limit(500);
     missOutRows = error ? [] : (isManager() ? data.filter((r) => r.branch_id === me.branch_id) : data);
     $('missout-box').hidden = !missOutRows.length;
+    if ($('kpi-miss')) $('kpi-miss').textContent = missOutRows.length;
     $('missout-head').innerHTML = `⚠ 퇴근 미기록 <b>${missOutRows.length}건</b> <span class="muted">· 최근 7일, 오늘 제외</span>`;
     $('missout-list').innerHTML = missOutRows.map((r) => `<tr>
         <td>${esc(dateLabel(r.work_date))}</td><td>${esc(branchName(r.branch_id))}</td><td>${esc(r.profile?.name || '')}</td><td>${hm(r.clock_in)}</td>
@@ -1461,7 +1510,7 @@
     const tbody = $('admin-records');
     const data = dailyRows;
     $('d-tools').hidden = !data.length;
-    if (!data.length) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${nameQ('d') ? `"${esc(nameQ('d'))}" 이름의 기록이 없습니다.` : '기록이 없습니다.'}</td></tr>`; $('admin-summary').textContent = ''; return; }
+    if (!data.length) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${nameQ('d') ? `"${esc(nameQ('d'))}" 이름의 기록이 없습니다.` : '기록이 없습니다.'}</td></tr>`; kpiFill('admin-records', null); $('admin-summary').textContent = ''; return; }
     const workMs = (r) => regularMs(r) + approvedOtMsForRow(r, dailyOt);
 
     // 날짜별 그룹 (data는 날짜 내림차순, 같은 날은 출근 빠른 순)
@@ -1487,7 +1536,7 @@
         return `
       <tr class="rec">
         <td>${esc(r.branch?.name || '미지정')}</td>
-        <td>${esc(r.profile?.name)}${r.home_branch_id && r.home_branch_id !== r.branch_id ? `<span class="tag-support">지원 · ${esc(branchName(r.home_branch_id))} 소속</span>` : ''}</td>
+        <td>${avName(r.profile?.name)}${r.home_branch_id && r.home_branch_id !== r.branch_id ? `<span class="tag-support">지원 · ${esc(branchName(r.home_branch_id))} 소속</span>` : ''}</td>
         <td>${hm(r.clock_in)}${r.in_dist_m != null ? `<span class="dist">${r.in_dist_m}m</span>` : ''}</td>
         <td>${r.clock_out ? hm(r.clock_out) + (r.out_dist_m != null ? `<span class="dist">${r.out_dist_m}m</span>` : '') : '<span class="tag-open">미퇴근</span>'}</td>
         <td>${fmtDur(regularMs(r))}</td>
@@ -1503,6 +1552,7 @@
     }).join('');
     const total = data.reduce((s, r) => s + workMs(r), 0);
     const open = data.filter((r) => !r.clock_out).length;
+    kpiFill('admin-records', [['총 근무시간', fmtDur(total), 'main'], ['기간', `${groups.length}일`], ['출근 기록', `${data.length.toLocaleString()}건`], ['미퇴근', `${open}건`, open ? 'warn' : '']]);
     $('admin-summary').textContent = `${groups.length}일 · ${data.length.toLocaleString()}건 · 총 근무시간 ${fmtDur(total)}(정규+승인 초과)${open ? ` · 미퇴근 ${open}건` : ''}`;
   }
   // 날짜 줄 누르면 펼침/접기, 날짜 안 [더 보기]
@@ -1564,10 +1614,11 @@
   function renderStaffSummary() {
     summaryRows = buildStaffSummary();
     const tbody = $('staff-summary');
-    if (!summaryRows.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">해당 직원이 없습니다.</td></tr>'; return; }
+    if (!summaryRows.length) { kpiFill('staff-summary', null); tbody.innerHTML = '<tr><td colspan="9" class="empty">해당 직원이 없습니다.</td></tr>'; return; }
     const sum = summaryRows.reduce((s, e) => ({
       days: s.days + e.days, reg: s.reg + e.reg, ot: s.ot + e.ot, total: s.total + e.total, open: s.open + e.open, edited: s.edited + e.edited,
     }), { days: 0, reg: 0, ot: 0, total: 0, open: 0, edited: 0 });
+    kpiFill('staff-summary', [['총 근무시간', fmtDur(sum.total), 'main'], ['직원', `${summaryRows.length}명`], ['근무일', `${sum.days}일`], ['정규 근무', fmtDur(sum.reg)], ['초과근무(승인)', fmtDur(sum.ot)], ['미퇴근', `${sum.open}건`, sum.open ? 'warn' : '']]);
     // 합계는 맨 위에 고정 (일부만 보여도 전체 합계가 바로 보이도록)
     tbody.innerHTML = `
       <tr class="total top rec">
@@ -1580,7 +1631,7 @@
       </tr>` + summaryRows.slice(0, pLimit).map((e) => `
       <tr class="rec ${e.days ? '' : 'zero'}">
         <td>${esc(e.branchLabel)}</td>
-        <td>${esc(e.name)}</td>
+        <td>${avName(e.name)}</td>
         <td class="num">${e.days}일</td>
         <td class="num">${fmtDur(e.reg)}</td>
         <td class="num">${fmtDur(e.ot)}</td>
@@ -1849,7 +1900,7 @@
   let oLimit = PAGE;
   function renderOvertimeAdmin() {
     const tbody = $('ot-list');
-    if (!otRows.length) { tbody.innerHTML = `<tr><td colspan="10" class="empty">${nameQ('o') ? `"${esc(nameQ('o'))}" 이름의 신청 내역이 없습니다.` : '신청 내역이 없습니다.'}</td></tr>`; $('ot-summary').textContent = ''; return; }
+    if (!otRows.length) { tbody.innerHTML = `<tr><td colspan="10" class="empty">${nameQ('o') ? `"${esc(nameQ('o'))}" 이름의 신청 내역이 없습니다.` : '신청 내역이 없습니다.'}</td></tr>`; kpiFill('ot-list', null); $('ot-summary').textContent = ''; return; }
 
     // 그 근무일의 실제 출퇴근 (해당 직원)
     const actualOf = (q) => otAtt.find((a) => a.user_id === q.user_id && a.work_date === q.work_date);
@@ -1869,7 +1920,7 @@
       <tr class="rec" data-id="${q.id}">
         <td>${dateLabel(q.work_date)}</td>
         <td>${esc(q.branch?.name || '미지정')}</td>
-        <td>${esc(q.profile?.name)}</td>
+        <td>${avName(q.profile?.name)}</td>
         <td>${otTimeLabel(q)} <span class="dist">${fmtDur(req)}</span></td>
         <td>${q.is_after ? '사후' : '사전'}</td>
         <td class="note">${esc(q.reason)}</td>
@@ -1887,6 +1938,7 @@
       </tr>`;
     }).join('') + moreRow('o', Math.min(oLimit, otRows.length), otRows.length, 10, '건');
     const pend = otRows.filter((q) => q.status === 'pending').length;
+    kpiFill('ot-list', [['신청', `${otRows.length}건`, 'main'], ['대기', `${pend}건`, pend ? 'warn' : ''], ['승인 신청시간', fmtDur(reqSum)], ['인정 시간', fmtDur(recSum)]]);
     $('ot-summary').textContent = `${otRows.length}건${pend ? ` · 대기 ${pend}건` : ''} · 승인 신청시간 ${fmtDur(reqSum)} · 인정 시간 ${fmtDur(recSum)}`;
   }
 
@@ -1966,6 +2018,8 @@
     const fj = $('s-job').value;
     const list = staff.filter((s) => matchBranch(s.branch_id, fb) && matchJob(s.job_group_id ?? null, fj) && !s.deleted_at && hit(s))
       .sort((a, b) => (isActive(b.id) - isActive(a.id)) || a.name.localeCompare(b.name, 'ko'));
+    { const on = list.filter((s) => isActive(s.id)).length;
+      kpiFill('staff-list', [['직원', `${list.length}명`, 'main'], ['사용 중', statusKnown ? `${on}명` : '-'], ['비활성', statusKnown ? `${list.length - on}명` : '-', statusKnown && list.length - on ? 'warn' : ''], ['슈퍼바이저', `${list.filter((s) => roleOf(s) === 'supervisor').length}명`]]); }
     $('staff-list').innerHTML = list.map((s) => {
       const st = authStatus.get(s.id);
       const active = isActive(s.id);
@@ -2508,6 +2562,7 @@
     const list = staff.filter((s) => s.deleted_at && matchBranch(s.branch_id, fb) && (!q || s.name.includes(q)))
       .sort((a, b) => b.deleted_at.localeCompare(a.deleted_at) || a.name.localeCompare(b.name, 'ko'));
     const known = retiredInfo.size > 0 || !staff.some((s) => s.deleted_at);
+    kpiFill('retired-list', [['퇴사자', `${list.length}명`, 'main'], ['보관 기간 경과', `${list.filter((s) => { const i = retiredInfo.get(s.id); const u = i && keepUntil(i); return u && keepOver(u); }).length}명`, 'warn']]);
     $('retired-list').innerHTML = list.map((s) => {
       const info = retiredInfo.get(s.id);
       const until = keepUntil(info);
@@ -2518,7 +2573,7 @@
       const period = !info ? '-' : info.first_date ? `${info.first_date} ~ ${info.last_date}` : '-';
       return `
       <tr data-id="${s.id}">
-        <td>${esc(s.name)}</td>
+        <td>${avName(s.name)}</td>
         <td>${esc(branchName(s.branch_id))}</td>
         <td>${esc(loginIdOf(s.email))}</td>
         <td class="num">${ymd(s.deleted_at)}</td>
@@ -2943,6 +2998,8 @@
 
   function renderBranches() {
     // 권역 매니저: 담당 점포만, 근무시간·특정일·위치만 수정 (사용 여부·삭제는 총괄)
+    { const bl = scopeBranches(); const loc = bl.filter((b) => hasLoc(b)).length;
+      kpiFill('branch-list', [['점포', `${bl.length}곳`, 'main'], ['사용 중', `${bl.filter((b) => b.is_active).length}곳`], ['GPS 확인 사용', `${loc}곳`], ['위치 미설정', `${bl.length - loc}곳`, bl.length - loc ? 'warn' : '']]); }
     $('branch-list').innerHTML = scopeBranches().map((b) => `
       <tr data-id="${b.id}">
         <td><input type="text" value="${esc(b.name)}" maxlength="30" data-field="name"></td>
@@ -2968,8 +3025,104 @@
           ${isHQ() ? '<button class="btn small" data-bdel>삭제</button>' : ''}
         </td>
       </tr>`).join('') || `<tr><td colspan="7" class="empty">${isHQ() ? '등록된 점포가 없습니다. 위에서 점포를 추가하세요.' : '담당 점포가 없습니다. 총괄 매니저에게 담당 점포 지정을 요청하세요.'}</td></tr>`;
+    if (SHOPL) branchMaster();
   }
 
+  // ---- 샤플형 점포 관리: 왼쪽 점포 목록 + 오른쪽 선택한 점포 상세(기본 정보·위치 지도·오늘 근무 현황) ----
+  // 상세 칸은 기존 표의 그 점포 줄을 그대로 보여 주는 것이라 저장·주소 찾기·지도 선택 등 기존 동작이 그대로 작동함
+  let selBranch = null;
+  let todayByBranch = new Map();
+  let miniKey = '';
+  function branchMaster() {
+    const tb = $('branch-list');
+    const wrap = tb.closest('.table-wrap');
+    if (!$('bmaster')) {
+      const ms = document.createElement('div');
+      ms.id = 'bmaster';
+      ms.innerHTML = `<div class="blist" id="blist"></div>
+        <div class="bdetail" id="bdetail">
+          <div id="bdhead" class="bdhead"></div>
+          <div class="bdgrid">
+            <div class="bdmain">
+              <section class="bsec" id="bsec-info"><h3>기본 정보</h3></section>
+              <section class="bsec"><h3>위치</h3><div id="bmini" class="bmini"></div><div id="bcoord" class="bcoord"></div></section>
+            </div>
+            <div class="bdside"><section class="bsec" id="btoday"></section></div>
+          </div>
+        </div>`;
+      wrap.before(ms);
+      $('bsec-info').appendChild(wrap);
+      $('blist').addEventListener('click', (e) => {
+        const c = e.target.closest('[data-bsel]');
+        if (!c) return;
+        selBranch = c.dataset.bsel;
+        branchMaster();
+        if (innerWidth <= 900) $('bdetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      $('bmini').addEventListener('click', (e) => { if (e.target.closest('.bmini-exp')) tb.querySelector('tr.sel [data-bpick]')?.click(); });
+    }
+    const bl = scopeBranches();
+    if (!bl.some((b) => String(b.id) === String(selBranch))) selBranch = bl[0] ? String(bl[0].id) : null;
+    const b = bl.find((x) => String(x.id) === String(selBranch));
+    $('blist').innerHTML = bl.map((x) => {
+      const n = staff.filter((s) => s.branch_id === x.id && !s.deleted_at).length;
+      return `<button type="button" class="bitem${String(x.id) === selBranch ? ' on' : ''}${x.is_active ? '' : ' off'}" data-bsel="${x.id}">
+        <span class="bic"></span>
+        <span class="bnm"><b>${esc(x.name)}</b><small>${esc(x.address || '주소 미입력')}</small></span>
+        <span class="bmeta"><i class="${hasLoc(x) ? 'g-on' : 'g-off'}">${hasLoc(x) ? 'GPS' : '미설정'}</i><em>${n}명</em></span>
+      </button>`;
+    }).join('');
+    [...tb.rows].forEach((tr) => tr.classList.toggle('sel', tr.dataset.id === selBranch));
+    $('bdetail').hidden = !b;
+    if (!b) return;
+    $('bdhead').innerHTML = `<span class="bic big"></span><b>${esc(b.name)}</b>${b.is_active ? '' : '<span class="st st-cancelled">사용 안 함</span>'}`;
+    $('bcoord').innerHTML = hasLoc(b)
+      ? `<div><span>위도</span><b>${b.lat}</b></div><div><span>경도</span><b>${b.lng}</b></div><div><span>허용 반경</span><b>${b.radius_m ?? 100}m</b></div>`
+      : '';
+    const c = todayByBranch.get(b.id) || { in: 0, working: 0, out: 0 };
+    $('btoday').innerHTML = `<h3>오늘 근무 현황</h3>
+      <div class="scard-r"><i class="pdot p-in"></i>출근<b>${c.in}</b></div>
+      <div class="scard-r"><i class="pdot p-work"></i>근무 중<b class="c-work">${c.working}</b></div>
+      <div class="scard-r"><i class="pdot p-out"></i>퇴근<b>${c.out}</b></div>`;
+    drawMini(b);
+  }
+  async function drawMini(b) {
+    const key = hasLoc(b) ? `${b.id}:${b.lat}:${b.lng}:${b.radius_m ?? 100}` : `${b.id}:none`;
+    if (key === miniKey && $('bmini').childElementCount) return;
+    miniKey = key;
+    const holder = $('bmini');
+    if (!hasLoc(b)) {
+      holder.className = 'bmini empty';
+      holder.innerHTML = '<span>미설정 · 위치 확인 안 함</span>';
+      return;
+    }
+    holder.className = 'bmini';
+    const box = document.createElement('div');
+    box.className = 'bmini-map';
+    holder.replaceChildren(box);
+    const exp = document.createElement('button');
+    exp.type = 'button'; exp.className = 'bmini-exp'; exp.title = '지도에서 선택';
+    exp.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+    holder.appendChild(exp);
+    const r = b.radius_m ?? 100;
+    try {
+      await loadKakao();
+      if (miniKey !== key) return;
+      const K = window.kakao.maps;
+      const pos = new K.LatLng(b.lat, b.lng);
+      const m = new K.Map(box, { center: pos, level: 3, draggable: false, scrollwheel: false, disableDoubleClickZoom: true });
+      new K.Marker({ position: pos, map: m });
+      new K.Circle({ center: pos, radius: r, strokeWeight: 1.5, strokeColor: '#3182f6', strokeOpacity: 0.9, fillColor: '#3182f6', fillOpacity: 0.12, map: m });
+    } catch (_) {
+      try { await loadLeaflet(); } catch (e) { box.textContent = e.message; return; }
+      if (miniKey !== key) return;
+      const L = window.L;
+      const m = L.map(box, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, keyboard: false }).setView([b.lat, b.lng], 17);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(m);
+      L.marker([b.lat, b.lng]).addTo(m);
+      L.circle([b.lat, b.lng], { radius: r, color: '#3182f6', weight: 1.5, fillOpacity: 0.12 }).addTo(m);
+    }
+  }
   $('branch-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = $('branch-name').value.trim();
