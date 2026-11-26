@@ -280,9 +280,14 @@
       return;
     }
     me = data;
-    adminLoaded = false; otLoaded = false; authStatus = new Map(); // 다른 계정으로 다시 로그인한 경우 대비
+    adminLoaded = false; otLoaded = false; authStatus = new Map(); baseP = null; homeOnce = false; // 다른 계정으로 다시 로그인한 경우 대비
     setUserLabel();
-    await loadMyScope(); // 권역 매니저: 담당 점포
+    // 접속 속도: 서로 기다릴 필요 없는 조회는 한꺼번에 보냄 (서버 왕복 1번 ≈ 0.2초)
+    const scopeP = loadMyScope(); // 권역 매니저: 담당 점포
+    const extraP = Promise.all([loadSpecialHours(), loadSupports()]); // 단축근무일·지원 근무 (정규 근무 계산·GPS에 필요)
+    if (me.is_admin || me.is_region_manager || me.is_branch_manager) scopeP.then(() => loadBase()); // 관리 화면용 점포·직원 목록 (미리 시작)
+    noticesP = loadNotices(); // 공지사항 (새 공지 수 표시, 홈에서도 이 결과를 씀)
+    await scopeP;
     // 관리 화면: 총괄·권역 매니저 또는 슈퍼바이저(담당 점포만)
     $('admin-tab').hidden = !(isMgr() || isManager());
     $('home-tab').hidden = !(isMgr() || isManager()); // 홈: 근태 관리 권한이 있는 사람만
@@ -292,8 +297,7 @@
     $('manager-note').textContent = isManager()
       ? `${me.branch?.name || ''} 슈퍼바이저 · 담당 점포만 조회·처리할 수 있습니다 (본인 기록·초과근무는 매니저가 처리)`
       : isRegion() ? `권역 매니저 · 담당 점포 ${myScope.size}곳만 조회·처리할 수 있습니다 (본인 기록·초과근무는 총괄 매니저가 처리)` : '';
-    await Promise.all([loadSpecialHours(), loadSupports()]); // 특정일 근무시간·지원 근무 (정규 근무 계산·GPS에 필요)
-    loadNotices(); // 공지사항 (새 공지 수 표시)
+    await extraP;
     // 총괄·권역 매니저는 출퇴근 등록 대상이 아님 → '출·퇴근 등록' 탭을 숨기고 근태 관리부터 보여 줌 (위치 확인도 안 함)
     const worker = !isMgr();
     document.querySelector('.tab[data-view="employee"]').hidden = !worker;
@@ -1315,6 +1319,13 @@
     loadOtBadge();
   }
 
+  // 점포·직원 목록: 접속할 때 한 번 미리 받아 두고 홈·근태 관리가 같이 씀 (fresh=true면 새로 받음)
+  let baseP = null;
+  let noticesP = null;
+  function loadBase(fresh = false) {
+    if (!baseP || fresh) baseP = Promise.all([loadBranches(), loadStaff()]);
+    return baseP;
+  }
   async function initAdmin() {
     if (!isMgr() && !isManager()) return;
     if (!adminReady) {
@@ -1327,7 +1338,7 @@
     }
     if (!adminLoaded) {
       // 처음 한 번: 점포·직원을 동시에 받아온 뒤 기록 조회 (느린 계정 상태는 기다리지 않음)
-      await Promise.all([loadBranches(), loadStaff()]);
+      await loadBase();
       fillUserSelects(); // 점포 이름이 들어간 선택 목록을 다시 채움
       adminLoaded = true;
       reloadRecords();
@@ -1338,7 +1349,7 @@
       return;
     }
     // 이후 탭 전환: 지금 화면은 그대로 두고, 뒤에서 조용히 최신 내용으로 바꿈
-    Promise.all([loadBranches(), loadStaff()]).then(() => reloadRecords(true));
+    loadBase(true).then(() => reloadRecords(true));
   }
 
   // 오늘 점포별 현황
@@ -1433,26 +1444,29 @@
   const havColor = (n) => HAV[[...(n || '?')].reduce((a, ch) => a + ch.charCodeAt(0), 0) % HAV.length];
   let homeOt = [];
   let homeSeq = 0;
+  let homeOnce = false; // 처음 홈은 접속할 때 미리 받은 점포·직원 목록을 그대로 씀
   async function loadHome() {
     if (!me) return;
     const seq = ++homeSeq;
     $('h-greet').textContent = `${me.name}님, 반가워요!`;
-    if (!adminLoaded) await initAdmin(); else await Promise.all([loadBranches(), loadStaff()]);
-    if (seq !== homeSeq) return;
-    const scoped = scopeBranches().filter((b) => (isManager() ? b.id === me.branch_id : true));
-    $('h-scope').textContent = isHQ() ? `총괄 매니저 · 전체 점포 ${branches.filter((b) => b.is_active).length}곳`
-      : isRegion() ? `권역 매니저 · 담당 점포 ${scoped.length}곳 (${scoped.map((b) => b.name).join(', ')})`
-        : `${me.branch?.name || ''} 슈퍼바이저`;
     const today = ymd(new Date());
     const from7 = ymd(new Date(Date.now() - 7 * 864e5));
-    const [att, miss, ot, mine] = await Promise.all([
+    // 홈 숫자 조회와 점포·직원 목록을 한꺼번에 보냄 (개인별·일자별 한 달 치 기록은 그 메뉴를 열 때 받음)
+    const baseReady = homeOnce ? loadBase(true) : loadBase();
+    homeOnce = true;
+    const qP = Promise.all([
       fetchAll(() => sb.from('attendance').select('id, user_id, branch_id, clock_in, clock_out, profile:profiles!attendance_user_id_fkey(name)').eq('work_date', today).order('clock_in')),
       sb.from('attendance').select('id, branch_id').is('clock_out', null).gte('work_date', from7).lt('work_date', today).limit(500),
       sb.from('overtime_requests').select('*, branch:branches!overtime_requests_branch_id_fkey(name), profile:profiles!overtime_requests_user_id_fkey(name)')
         .eq('status', 'pending').order('work_date', { ascending: false }).order('start_at').limit(200),
       isManager() ? sb.from('attendance').select('clock_in, clock_out').eq('user_id', me.id).eq('work_date', today).maybeSingle() : Promise.resolve({ data: null }),
     ]);
+    const [[att, miss, ot, mine]] = await Promise.all([qP, baseReady]);
     if (seq !== homeSeq) return;
+    const scoped = scopeBranches().filter((b) => (isManager() ? b.id === me.branch_id : true));
+    $('h-scope').textContent = isHQ() ? `총괄 매니저 · 전체 점포 ${branches.filter((b) => b.is_active).length}곳`
+      : isRegion() ? `권역 매니저 · 담당 점포 ${scoped.length}곳 (${scoped.map((b) => b.name).join(', ')})`
+        : `${me.branch?.name || ''} 슈퍼바이저`;
     // 오늘 출퇴근
     const recs = (att.data || []).filter((r) => inScope(r.branch_id));
     const working = recs.filter((r) => !r.clock_out);
@@ -1475,6 +1489,7 @@
     // 초과근무 승인 대기 (본인 신청은 총괄이 처리하므로 슈퍼바이저·권역 매니저 화면에서는 버튼 없음)
     homeOt = (ot.data || []).filter((q) => inScope(q.branch_id));
     $('h-ot-n').textContent = homeOt.length ? `${homeOt.length}건` : '';
+    $('ot-badge').hidden = !homeOt.length; $('ot-badge').textContent = homeOt.length ? String(homeOt.length) : ''; // 메뉴 배지도 같은 결과로 (따로 조회 안 함)
     $('h-ot-list').innerHTML = homeOt.slice(0, 3).map((q) => {
       const n = q.profile?.name || '';
       const mineOt = noSelf() && q.user_id === me.id;
@@ -1502,7 +1517,9 @@
     wc.dataset.go = isMgr() ? 'hq:branches' : '';
     wc.classList.toggle('nogo', !isMgr());
     renderHomeNotices();
-    loadNotices().then(renderHomeNotices);
+    const np = noticesP || loadNotices(); // 접속할 때 받은 공지 결과가 있으면 그것을 씀 (다음 홈부터는 새로 받음)
+    noticesP = null;
+    np.then(renderHomeNotices);
   }
   function renderHomeNotices() {
     const total = staff.filter((s) => !s.deleted_at && isWorker(s)).length;

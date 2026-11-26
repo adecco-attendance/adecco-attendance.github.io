@@ -6,6 +6,9 @@
   <meta name="robots" content="noindex, nofollow">
   <title>아데코코리아</title>
   <!-- 홈 화면 바로가기: 이름·아이콘 (display=browser 라서 '앱 설치'는 권하지 않고 바로가기로만 추가됨) -->
+  <!-- 접속 속도: 서버·CDN과 미리 연결해 둠 (처음 접속 때 연결 준비 시간 절약) -->
+  <link rel="preconnect" href="https://tjdeajvepgpsceqzentc.supabase.co" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="application-name" content="아데코 근태">
   <meta name="apple-mobile-web-app-title" content="아데코 근태">
@@ -16,7 +19,7 @@
   <link rel="stylesheet" href="style.css">
   <!-- 화면 디자인 (2026-11-23, 시안 D): 글꼴 Pretendard + 사이드바 레이아웃. 되돌리려면 아래 두 줄과 design.js 줄을 지우면 됨 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="design.css?v=20261125h">
+  <link rel="stylesheet" href="design.css?v=20261126a">
 </head>
 <body>
   <div id="config-warning" class="banner" hidden>
@@ -669,7 +672,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="config.js"></script>
-  <script src="app.js?v=20261125h"></script>
-  <script src="design.js?v=20261125h"></script>
+  <script src="app.js?v=20261126a"></script>
+  <script src="design.js?v=20261126a"></script>
 </body>
 </html>
