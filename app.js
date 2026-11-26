@@ -435,7 +435,43 @@
       // 매니저는 '읽음 N / 전체 M명'을 보려고 직원 수가 필요
       Promise.all([loadNotices(), me?.is_admin && !staff.length ? loadStaff() : null]).then(renderNotices);
     }
+    navRecord();
   }
+
+  // ---- 뒤로 가기: 화면(위 탭·작은 탭)을 옮길 때마다 브라우저 기록에 남겨, 뒤로 가기(휴대폰 뒤로 버튼)로 이전 화면(예: 홈)으로 돌아감 ----
+  //  주소는 바꾸지 않고 기록만 남김. 첫 화면에서 더 뒤로 가면 원래처럼 사이트를 나감
+  let navRestoring = false;
+  let navTimer = 0;
+  function navState() {
+    const v = document.querySelector('.topbar .tab.active')?.dataset.view || null;
+    const row = v ? document.querySelector(`#admin-view .subtabs[data-for="${v}"]`) : null;
+    return { v, s: row?.querySelector('[data-sub].active')?.dataset.sub || null };
+  }
+  function navRecord() {
+    clearTimeout(navTimer);
+    navTimer = setTimeout(() => { // 위 탭 + 작은 탭이 같이 바뀌는 경우 한 번만 기록
+      const restoring = navRestoring;
+      navRestoring = false;
+      if (!me) return;
+      const st = navState();
+      const cur = history.state;
+      if (cur?.app && cur.v === st.v && cur.s === st.s) return;
+      if (restoring || !cur?.app) history.replaceState({ app: 1, ...st }, '');
+      else history.pushState({ app: 1, ...st }, '');
+    }, 0);
+  }
+  window.addEventListener('popstate', (e) => {
+    const st = e.state;
+    if (!me || !st?.app) return;
+    const t = document.querySelector(`.topbar .tab[data-view="${st.v}"]`);
+    if (!t || t.hidden) return;
+    navRestoring = true;
+    document.body.classList.remove('dnav-open'); // 휴대폰 메뉴 서랍이 열려 있으면 닫음
+    if (!t.classList.contains('active')) switchTab(st.v);
+    if (st.s) document.querySelector(`#admin-view .subtabs[data-for="${st.v}"] [data-sub="${st.s}"]`)?.click();
+    navRecord();
+    window.scrollTo(0, 0);
+  });
 
   // ---------------------------------------------------------------
   //  공지사항: 매니저만 작성·수정·삭제, 모두 읽기. 펼쳐 보면 '읽음'으로 기록
@@ -559,6 +595,7 @@
     const sub = t.dataset.sub;
     t.parentElement.querySelectorAll('[data-sub]').forEach((x) => x.classList.toggle('active', x === t)); // 각 줄이 따로 기억
     document.querySelectorAll('#admin-view [data-group]').forEach((el) => { el.hidden = el.dataset.group !== sub; });
+    navRecord(); // 뒤로 가기 기록
     if (sub === 'today' || sub === 'personal' || sub === 'daily') initAdmin(); // 처음엔 전부 불러오고, 이후엔 조용히 갱신
     if (sub === 'overtime') {
       // 이미 한 번 불러왔으면 화면은 그대로 두고 조용히 갱신, 처음이면 바로 조회
